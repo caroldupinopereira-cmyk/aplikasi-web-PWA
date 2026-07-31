@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useToast, ToastContainer } from "./Toast";
 
 type Staff = { id: number; email: string; displayName: string; role: string; active: boolean };
 type Log = { id: number; actorName: string; action: string; module: string; details: string; createdAt: string };
@@ -17,7 +18,7 @@ export default function Settings() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [current, setCurrent] = useState<Current | null>(null);
-  const [message, setMessage] = useState("Memuat pengaturan keamanan…");
+  const { toasts, addToast, dismiss } = useToast();
   const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
@@ -25,9 +26,9 @@ export default function Settings() {
       const response = await fetch("/api/staff");
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      setStaff(data.users); setLogs(data.logs); setCurrent(data.currentUser); setMessage("");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Gagal memuat pengaturan."); }
-  }, []);
+      setStaff(data.users); setLogs(data.logs); setCurrent(data.currentUser);
+    } catch (error) { addToast(error instanceof Error ? error.message : "Gagal memuat pengaturan.", "error"); }
+  }, [addToast]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -39,8 +40,8 @@ export default function Settings() {
       body: JSON.stringify(Object.fromEntries(form)),
     });
     const data = await response.json();
-    if (!response.ok) return setMessage(data.error);
-    setShowForm(false); setMessage("Akun staf berhasil disimpan."); await load();
+    if (!response.ok) return addToast(data.error, "error");
+    setShowForm(false); addToast("Akun staf berhasil disimpan.", "success"); await load();
   }
 
   async function update(user: Staff, changes: Partial<Staff>) {
@@ -49,8 +50,8 @@ export default function Settings() {
       body: JSON.stringify({ id: user.id, role: changes.role ?? user.role, active: changes.active ?? user.active }),
     });
     const data = await response.json();
-    if (!response.ok) return setMessage(data.error);
-    setMessage("Hak akses berhasil diperbarui."); await load();
+    if (!response.ok) return addToast(data.error, "error");
+    addToast("Hak akses berhasil diperbarui.", "success"); await load();
   }
 
   return <div className="page settings-page">
@@ -64,8 +65,6 @@ export default function Settings() {
       <article><span>♙</span><div><strong>{staff.filter((item) => item.active).length} akun aktif</strong><small>Staf yang terdaftar</small></div><em>Aman</em></article>
       <article><span>▤</span><div><strong>{logs.length} aktivitas</strong><small>Riwayat terbaru sistem</small></div><em>Tercatat</em></article>
     </section>
-
-    {message && <div className="mail-message"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
 
     <section className="panel settings-panel">
       <div className="panel-title"><div><h2>Daftar Pengguna</h2><p>Akun hanya dapat memakai sistem setelah diberi akses ke situs dan didaftarkan di sini.</p></div></div>
@@ -92,5 +91,6 @@ export default function Settings() {
     {showForm && <div className="modal-layer"><div className="mail-modal"><div className="modal-heading"><div><p className="eyebrow">AKUN BARU</p><h2>Tambah Staf</h2></div><button onClick={() => setShowForm(false)}>×</button></div>
       <form onSubmit={addStaff}><div className="form-grid"><label>Nama lengkap<input name="displayName" required /></label><label>Email ChatGPT<input name="email" type="email" required /></label><label className="wide">Peran<select name="role" defaultValue="Staf">{permissions.map(([role]) => <option key={role}>{role}</option>)}</select></label></div><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>Batal</button><button className="save-button">Simpan Akun</button></div></form>
     </div></div>}
+    <ToastContainer toasts={toasts} dismiss={dismiss} />
   </div>;
 }
