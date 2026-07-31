@@ -4,6 +4,9 @@ import { auditLogs, staffUsers } from "../db/schema";
 
 export const ROLES = ["Administrator", "Pimpinan", "Staf", "Viewer"] as const;
 export type StaffRole = (typeof ROLES)[number];
+export const READ_ROLES: StaffRole[] = ["Administrator", "Pimpinan", "Staf", "Viewer"];
+export const WRITE_ROLES: StaffRole[] = ["Administrator", "Pimpinan", "Staf"];
+export const MANAGE_ROLES: StaffRole[] = ["Administrator", "Pimpinan"];
 
 export type RequestUser = {
   email: string;

@@ -9,14 +9,17 @@ import {
   expenses,
   documents,
 } from "../../../db/schema";
+import { READ_ROLES, requireRole } from "../../security";
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Terjadi kesalahan.";
   return Response.json({ error: message }, { status: 500 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireRole(request, READ_ROLES);
+    if ("response" in auth) return auth.response;
     const db = await getDb();
 
     const [
@@ -125,6 +128,7 @@ export async function GET() {
     }
 
     return Response.json({
+      currentUser: auth.user,
       stats: {
         incomingTotal: allIncoming.length,
         incomingNew,

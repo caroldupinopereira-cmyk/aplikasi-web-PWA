@@ -1,7 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { documents } from "../../../db/schema";
-import { addAudit, getRequestUser } from "../../security";
+import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
+import { isIsoDate, parsePositiveId } from "../validation";
 
 const allowedTypes = new Set([
   "application/pdf",
@@ -18,8 +19,10 @@ function errorResponse(error: unknown) {
   return Response.json({ error: message }, { status: 500 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireRole(request, READ_ROLES);
+    if ("response" in auth) return auth.response;
     const db = await getDb();
     const rows = await db.select().from(documents).orderBy(desc(documents.documentDate), desc(documents.id));
     return Response.json({ documents: rows });
@@ -28,6 +31,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireRole(request, WRITE_ROLES);
+    if ("response" in auth) return auth.response;
     const form = await request.formData();
     const file = form.get("file");
     const title = String(form.get("title") || "").trim();
@@ -36,6 +41,9 @@ export async function POST(request: Request) {
 
     if (!(file instanceof File) || !title || !category || !documentDate) {
       return Response.json({ error: "Judul, kategori, tanggal, dan file wajib diisi." }, { status: 400 });
+    }
+    if (!isIsoDate(documentDate)) {
+      return Response.json({ error: "Tanggal dokumen tidak valid." }, { status: 400 });
     }
     if (!allowedTypes.has(file.type)) {
       return Response.json({ error: "Jenis file tidak didukung. Gunakan PDF, Word, Excel, JPG, atau PNG." }, { status: 400 });
@@ -63,22 +71,23 @@ export async function POST(request: Request) {
       sizeBytes: file.size,
       description: String(form.get("description") || "").trim(),
     }).returning();
+    await addAudit(auth.user, "Unggah dokumen", "Arsip Dokumen", `${document.title} — ${document.fileName}`);
     return Response.json({ document }, { status: 201 });
-
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Unggah dokumen", "Arsip Dokumen", `${document.title} — ${document.fileName}`);
   } catch (error) { return errorResponse(error); }
 }
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireRole(request, MANAGE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number };
-    if (!payload.id) {
+    const id = parsePositiveId(payload.id);
+    if (!id) {
       return Response.json({ error: "ID wajib disertakan." }, { status: 400 });
     }
 
     const db = await getDb();
-    const [doc] = await db.select().from(documents).where(eq(documents.id, payload.id)).limit(1);
+    const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
     if (!doc) return Response.json({ error: "Dokumen tidak ditemukan." }, { status: 404 });
 
     try {
@@ -86,10 +95,9 @@ export async function DELETE(request: Request) {
       if (env.BUCKET) await env.BUCKET.delete(doc.storageKey);
     } catch { /* storage mungkin tidak tersedia */ }
 
-    await db.delete(documents).where(eq(documents.id, payload.id));
+    await db.delete(documents).where(eq(documents.id, id));
 
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Hapus dokumen", "Arsip Dokumen", `${doc.title}`);
+    await addAudit(auth.user, "Hapus dokumen", "Arsip Dokumen", `${doc.title}`);
 
     return Response.json({ success: true });
   } catch (error) { return errorResponse(error); }

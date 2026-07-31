@@ -1,15 +1,18 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { budgetAllocations, expenses } from "../../../db/schema";
-import { addAudit, getRequestUser } from "../../security";
+import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole } from "../../security";
+import { parsePositiveId, validDateFields } from "../validation";
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Terjadi kesalahan.";
   return Response.json({ error: message }, { status: 500 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireRole(request, READ_ROLES);
+    if ("response" in auth) return auth.response;
     const db = await getDb();
     const [budgets, transactions] = await Promise.all([
       db.select().from(budgetAllocations).orderBy(desc(budgetAllocations.id)),
@@ -21,6 +24,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireRole(request, MANAGE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as Record<string, string | number>;
     const db = await getDb();
     if (payload.kind === "budget") {
@@ -34,10 +39,8 @@ export async function POST(request: Request) {
         amountCents: Math.round(Number(payload.amount) * 100),
         notes: String(payload.notes || "").trim(),
       }).returning();
+      await addAudit(auth.user, "Tambah anggaran", "Keuangan", `${budget.programName} — $${(budget.amountCents / 100).toFixed(2)}`);
       return Response.json({ budget }, { status: 201 });
-
-      const user = await getRequestUser(request);
-      if (user) await addAudit(user, "Tambah anggaran", "Keuangan", `${budget.programName} — $${(budget.amountCents / 100).toFixed(2)}`);
     }
 
     const required = ["receiptNumber", "expenseDate", "description", "category", "programName", "payee"];
@@ -45,6 +48,8 @@ export async function POST(request: Request) {
     if (missing || Number(payload.amount) <= 0) {
       return Response.json({ error: "Lengkapi data pengeluaran dan masukkan jumlah yang benar." }, { status: 400 });
     }
+    const dateError = validDateFields(payload, ["expenseDate"]);
+    if (dateError) return Response.json({ error: dateError }, { status: 400 });
     const [expense] = await db.insert(expenses).values({
       receiptNumber: String(payload.receiptNumber).trim(),
       expenseDate: String(payload.expenseDate),
@@ -56,19 +61,22 @@ export async function POST(request: Request) {
       amountCents: Math.round(Number(payload.amount) * 100),
       notes: String(payload.notes || "").trim(),
     }).returning();
+    await addAudit(auth.user, "Catat pengeluaran", "Keuangan", `${expense.receiptNumber} — ${expense.description}`);
     return Response.json({ expense }, { status: 201 });
-
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Catat pengeluaran", "Keuangan", `${expense.receiptNumber} — ${expense.description}`);
   } catch (error) { return errorResponse(error); }
 }
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireRole(request, MANAGE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as Record<string, unknown>;
-    if (!payload.id) {
+    const id = parsePositiveId(payload.id);
+    if (!id) {
       return Response.json({ error: "ID wajib disertakan." }, { status: 400 });
     }
+    const dateError = validDateFields(payload, ["expenseDate"]);
+    if (dateError) return Response.json({ error: dateError }, { status: 400 });
 
     const updates: Record<string, unknown> = {};
     if (payload.status) {
@@ -89,32 +97,32 @@ export async function PATCH(request: Request) {
     }
 
     const db = await getDb();
-    const [expense] = await db.update(expenses).set(updates).where(eq(expenses.id, payload.id as number)).returning();
+    const [expense] = await db.update(expenses).set(updates).where(eq(expenses.id, id)).returning();
+    if (!expense) return Response.json({ error: "Pengeluaran tidak ditemukan." }, { status: 404 });
+    await addAudit(auth.user, "Perbarui pengeluaran", "Keuangan", `ID ${id}`);
     return Response.json({ expense });
-
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Perbarui pengeluaran", "Keuangan", `ID ${payload.id}`);
   } catch (error) { return errorResponse(error); }
 }
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireRole(request, ["Administrator"]);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number; kind?: string };
-    if (!payload.id) {
+    const id = parsePositiveId(payload.id);
+    if (!id) {
       return Response.json({ error: "ID wajib disertakan." }, { status: 400 });
     }
 
     const db = await getDb();
     if (payload.kind === "budget") {
-      const [deleted] = await db.delete(budgetAllocations).where(eq(budgetAllocations.id, payload.id)).returning();
+      const [deleted] = await db.delete(budgetAllocations).where(eq(budgetAllocations.id, id)).returning();
       if (!deleted) return Response.json({ error: "Anggaran tidak ditemukan." }, { status: 404 });
-      const user = await getRequestUser(request);
-      if (user) await addAudit(user, "Hapus anggaran", "Keuangan", `${deleted.programName}`);
+      await addAudit(auth.user, "Hapus anggaran", "Keuangan", `${deleted.programName}`);
     } else {
-      const [deleted] = await db.delete(expenses).where(eq(expenses.id, payload.id)).returning();
+      const [deleted] = await db.delete(expenses).where(eq(expenses.id, id)).returning();
       if (!deleted) return Response.json({ error: "Pengeluaran tidak ditemukan." }, { status: 404 });
-      const user = await getRequestUser(request);
-      if (user) await addAudit(user, "Hapus pengeluaran", "Keuangan", `${deleted.receiptNumber}`);
+      await addAudit(auth.user, "Hapus pengeluaran", "Keuangan", `${deleted.receiptNumber}`);
     }
 
     return Response.json({ success: true });

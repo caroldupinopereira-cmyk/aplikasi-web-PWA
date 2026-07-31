@@ -1,15 +1,18 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { residents } from "../../../db/schema";
-import { addAudit, getRequestUser } from "../../security";
+import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
+import { parsePositiveId, serverError, validDateFields } from "../validation";
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Terjadi kesalahan.";
   return Response.json({ error: message }, { status: 500 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireRole(request, READ_ROLES);
+    if ("response" in auth) return auth.response;
     const db = await getDb();
     const rows = await db.select().from(residents).orderBy(desc(residents.id));
     return Response.json({ residents: rows });
@@ -20,10 +23,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireRole(request, WRITE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as Record<string, string | boolean>;
     const required = ["recordNumber", "fullName", "gender", "birthDate", "suco", "aldeia", "householdNumber"];
     const missing = required.find((key) => !String(payload[key] ?? "").trim());
     if (missing) return Response.json({ error: `Kolom ${missing} wajib diisi.` }, { status: 400 });
+    const dateError = validDateFields(payload, ["birthDate"]);
+    if (dateError) return Response.json({ error: dateError }, { status: 400 });
+    if (!["Laki-laki", "Perempuan"].includes(String(payload.gender))) {
+      return Response.json({ error: "Jenis kelamin tidak valid." }, { status: 400 });
+    }
 
     const db = await getDb();
     const [resident] = await db.insert(residents).values({
@@ -39,10 +49,8 @@ export async function POST(request: Request) {
       occupation: String(payload.occupation || "").trim(),
     }).returning();
 
+    await addAudit(auth.user, "Tambah penduduk", "Data Penduduk", `${resident.fullName} — ${resident.suco}`);
     return Response.json({ resident }, { status: 201 });
-
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Tambah penduduk", "Data Penduduk", `${resident.fullName} — ${resident.suco}`);
   } catch (error) {
     return errorResponse(error);
   }
@@ -50,10 +58,15 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireRole(request, WRITE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as Record<string, unknown>;
-    if (!payload.id) {
+    const id = parsePositiveId(payload.id);
+    if (!id) {
       return Response.json({ error: "ID wajib disertakan." }, { status: 400 });
     }
+    const dateError = validDateFields(payload, ["birthDate"]);
+    if (dateError) return Response.json({ error: dateError }, { status: 400 });
 
     const updates: Record<string, unknown> = {};
     for (const key of ["recordNumber", "fullName", "gender", "birthDate", "suco", "aldeia", "householdNumber", "maritalStatus", "occupation"]) {
@@ -67,11 +80,10 @@ export async function PATCH(request: Request) {
     }
 
     const db = await getDb();
-    const [resident] = await db.update(residents).set(updates).where(eq(residents.id, payload.id as number)).returning();
+    const [resident] = await db.update(residents).set(updates).where(eq(residents.id, id)).returning();
+    if (!resident) return Response.json({ error: "Penduduk tidak ditemukan." }, { status: 404 });
+    await addAudit(auth.user, "Perbarui penduduk", "Data Penduduk", `ID ${id}`);
     return Response.json({ resident });
-
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Perbarui penduduk", "Data Penduduk", `ID ${payload.id}`);
   } catch (error) {
     return errorResponse(error);
   }
@@ -79,22 +91,24 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await requireRole(request, MANAGE_ROLES);
+    if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number };
-    if (!payload.id) {
+    const id = parsePositiveId(payload.id);
+    if (!id) {
       return Response.json({ error: "ID wajib disertakan." }, { status: 400 });
     }
 
     const db = await getDb();
-    const [deleted] = await db.delete(residents).where(eq(residents.id, payload.id)).returning();
+    const [deleted] = await db.delete(residents).where(eq(residents.id, id)).returning();
     if (!deleted) {
       return Response.json({ error: "Penduduk tidak ditemukan." }, { status: 404 });
     }
 
-    const user = await getRequestUser(request);
-    if (user) await addAudit(user, "Hapus penduduk", "Data Penduduk", `${deleted.fullName}`);
+    await addAudit(auth.user, "Hapus penduduk", "Data Penduduk", `${deleted.fullName}`);
 
     return Response.json({ success: true });
   } catch (error) {
-    return errorResponse(error);
+    return serverError(error);
   }
 }

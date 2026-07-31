@@ -1,9 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { documents } from "../../../../db/schema";
+import { READ_ROLES, requireRole } from "../../../security";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireRole(request, READ_ROLES);
+    if ("response" in auth) return auth.response;
     const { id } = await context.params;
     const db = await getDb();
     const [document] = await db.select().from(documents).where(eq(documents.id, Number(id))).limit(1);

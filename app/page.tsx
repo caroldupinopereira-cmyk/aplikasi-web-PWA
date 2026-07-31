@@ -22,6 +22,11 @@ const menu = [
 type Activity = { title: string; meta: string; badge: string; type: string };
 type Task = { label: string; done: boolean };
 type DashboardData = {
+  currentUser: {
+    email: string;
+    displayName: string;
+    role: string;
+  };
   stats: {
     incomingTotal: number;
     incomingNew: number;
@@ -59,22 +64,27 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  async function loadDashboard() {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/dashboard");
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Gagal memuat dashboard.");
-      setData(result);
-      setTasks(result.pendingTasks);
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void loadDashboard(); }, []);
+  useEffect(() => {
+    let activeRequest = true;
+    fetch("/api/dashboard")
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Gagal memuat dashboard.");
+        return result as DashboardData;
+      })
+      .then((result) => {
+        if (!activeRequest) return;
+        setData(result);
+        setTasks(result.pendingTasks);
+      })
+      .catch(() => {
+        if (activeRequest) setData(null);
+      })
+      .finally(() => {
+        if (activeRequest) setLoading(false);
+      });
+    return () => { activeRequest = false; };
+  }, []);
 
   const filtered = useMemo(
     () => (data?.recentActivities ?? []).filter((item) => item.title.toLowerCase().includes(query.toLowerCase())),
@@ -82,6 +92,13 @@ export default function Home() {
   );
 
   const stats = data?.stats;
+  const currentUser = data?.currentUser;
+  const initials = currentUser?.displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "PA";
   const budgetPercent = stats?.totalBudget ? Math.min(100, Math.round((stats.totalExpense / stats.totalBudget) * 100)) : 0;
 
   return (
@@ -115,8 +132,8 @@ export default function Home() {
         <div className="sidebar-footer">
           <button className={active === "Pengaturan" ? "nav-item active" : "nav-item"} onClick={() => { setActive("Pengaturan"); setMobileOpen(false); }}><span className="nav-icon">⚙</span>Pengaturan</button>
           <div className="user-card">
-            <div className="avatar">NP</div>
-            <div><strong>Nivio Pereira</strong><span>Administrator</span></div>
+            <div className="avatar">{initials}</div>
+            <div><strong>{currentUser?.displayName ?? "Pengguna"}</strong><span>{currentUser?.role ?? "Memuat..."}</span></div>
             <span className="more">•••</span>
           </div>
         </div>
@@ -135,7 +152,7 @@ export default function Home() {
           <div className="top-actions">
             <button className="language">ID <span>⌄</span></button>
             <button className="notification" aria-label="Notifikasi">♢<i /></button>
-            <div className="top-avatar">NP</div>
+            <div className="top-avatar" title={currentUser?.email}>{initials}</div>
           </div>
         </header>
 
