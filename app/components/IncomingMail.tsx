@@ -27,10 +27,10 @@ const blankForm = {
   notes: "",
 };
 
-export default function IncomingMail() {
+export default function IncomingMail({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const [letters, setLetters] = useState<Letter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialOpenCreate);
   const [editing, setEditing] = useState<Letter | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Semua");

@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, staffUsers } from "../db/schema";
+import { getVerifiedIdentity } from "./access-identity";
 
 export const ROLES = ["Administrator", "Pimpinan", "Staf", "Viewer"] as const;
 export type StaffRole = (typeof ROLES)[number];
@@ -15,20 +16,8 @@ export type RequestUser = {
   active: boolean;
 };
 
-function requestIdentity(request: Request) {
-  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!email) return null;
-  const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  const nameEncoding = request.headers.get("oai-authenticated-user-full-name-encoding");
-  let displayName = email;
-  if (encodedName && nameEncoding === "percent-encoded-utf-8") {
-    try { displayName = decodeURIComponent(encodedName); } catch { /* use email */ }
-  }
-  return { email, displayName };
-}
-
 export async function getRequestUser(request: Request): Promise<RequestUser | null> {
-  const identity = requestIdentity(request);
+  const identity = await getVerifiedIdentity(request);
   if (!identity) return null;
   const db = await getDb();
   const [known] = await db.select().from(staffUsers).where(eq(staffUsers.email, identity.email)).limit(1);
@@ -37,7 +26,7 @@ export async function getRequestUser(request: Request): Promise<RequestUser | nu
   }
 
   const existing = await db.select({ id: staffUsers.id }).from(staffUsers).limit(1);
-  if (existing.length) return null;
+  if (existing.length || !identity.canBootstrapAdmin) return null;
   const [first] = await db.insert(staffUsers).values({
     email: identity.email,
     displayName: identity.displayName,

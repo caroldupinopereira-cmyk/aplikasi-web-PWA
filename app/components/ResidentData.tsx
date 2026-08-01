@@ -33,10 +33,10 @@ function ageFrom(date: string) {
   return age;
 }
 
-export default function ResidentData() {
+export default function ResidentData({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const [records, setRecords] = useState<Resident[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialOpenCreate);
   const [editing, setEditing] = useState<Resident | null>(null);
   const [query, setQuery] = useState("");
   const [sucoFilter, setSucoFilter] = useState("Semua");

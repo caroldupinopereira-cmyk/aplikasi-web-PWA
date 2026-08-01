@@ -31,10 +31,10 @@ const blankForm = {
 
 const statuses = ["Draf", "Menunggu Persetujuan", "Disetujui", "Terkirim"];
 
-export default function OutgoingMail() {
+export default function OutgoingMail({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const [letters, setLetters] = useState<Letter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialOpenCreate);
   const [editing, setEditing] = useState<Letter | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Semua");

@@ -18,10 +18,10 @@ const blankForm = {
 
 const statusOptions = ["Draf", "Diperiksa", "Selesai"];
 
-export default function ActivityReports() {
+export default function ActivityReports({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialOpenCreate);
   const [editing, setEditing] = useState<Report | null>(null);
   const [query, setQuery] = useState("");
   const [month, setMonth] = useState("Semua");

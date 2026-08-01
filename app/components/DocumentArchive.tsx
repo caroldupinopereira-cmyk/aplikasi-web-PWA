@@ -15,10 +15,10 @@ const blankForm = { title: "", referenceNumber: "", documentDate: now.toISOStrin
 const fileSize = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const fileKind = (type: string) => type.includes("pdf") ? "PDF" : type.includes("word") ? "DOC" : type.includes("excel") || type.includes("sheet") ? "XLS" : "IMG";
 
-export default function DocumentArchive() {
+export default function DocumentArchive({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialOpenCreate);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Semua");
   const [form, setForm] = useState(blankForm);

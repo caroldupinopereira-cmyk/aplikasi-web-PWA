@@ -12,11 +12,11 @@ const expenseBlank = { receiptNumber: "", expenseDate: new Date().toISOString().
 const budgetBlank = { budgetYear: new Date().getFullYear(), programName: "", category: "Operasional", amount: 0, notes: "" };
 const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function Finance() {
+export default function Finance({ openDialog = null }: { openDialog?: "budget" | "expense" | null }) {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState<"budget" | "expense" | null>(null);
+  const [dialog, setDialog] = useState<"budget" | "expense" | null>(openDialog);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [query, setQuery] = useState("");
   const [month, setMonth] = useState("Semua");
