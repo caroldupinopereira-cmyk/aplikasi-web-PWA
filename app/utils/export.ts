@@ -21,3 +21,32 @@ export function exportToCSV(data: Record<string, unknown>[], filename: string) {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+export async function exportAllPages<T>(
+  endpoint: string,
+  key: string,
+  filters: Record<string, string>,
+  mapRow: (row: T, index: number) => Record<string, unknown>,
+  filename: string,
+) {
+  const rows: T[] = [];
+  let page = 1;
+  let total = 0;
+  do {
+    const params = new URLSearchParams({
+      ...filters,
+      page: String(page),
+      perPage: "100",
+    });
+    const response = await fetch(`${endpoint}?${params}`);
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "Data lengkap belum dapat diekspor.");
+    }
+    rows.push(...((result[key] ?? []) as T[]));
+    total = Number(result.pagination?.total ?? rows.length);
+    page += 1;
+  } while (rows.length < total && page <= 101);
+
+  exportToCSV(rows.map(mapRow), filename);
+}

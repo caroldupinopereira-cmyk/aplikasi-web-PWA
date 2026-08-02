@@ -1,8 +1,10 @@
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { documents } from "../../../db/schema";
-import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
+import { addAudit, ADMIN_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
 import { isIsoDate, parsePositiveId } from "../validation";
+import { readListQuery } from "../list-query";
+import { fileSignatureMatches, sha256Hex } from "../../file-security";
 
 const allowedTypes = new Set([
   "application/pdf",
@@ -23,9 +25,45 @@ export async function GET(request: Request) {
   try {
     const auth = await requireRole(request, READ_ROLES);
     if ("response" in auth) return auth.response;
+    const { page, perPage, offset, query, params } = readListQuery(request);
+    const category = (params.get("category") ?? "").trim();
+    const conditions = [];
+    if (query) {
+      const pattern = `%${query}%`;
+      conditions.push(or(
+        like(documents.title, pattern),
+        like(documents.referenceNumber, pattern),
+        like(documents.fileName, pattern),
+        like(documents.description, pattern),
+      ));
+    }
+    if (category && category !== "Semua") conditions.push(eq(documents.category, category));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const currentYear = new Date().getFullYear();
     const db = await getDb();
-    const rows = await db.select().from(documents).orderBy(desc(documents.documentDate), desc(documents.id));
-    return Response.json({ documents: rows });
+    const [rows, [totalRow], [summary], categoryRows] = await Promise.all([
+      db.select().from(documents).where(where).orderBy(desc(documents.documentDate), desc(documents.id)).limit(perPage).offset(offset),
+      db.select({ value: sql<number>`count(*)` }).from(documents).where(where),
+      db.select({
+        total: sql<number>`count(*)`,
+        thisYear: sql<number>`sum(case when ${documents.archiveYear} = ${currentYear} then 1 else 0 end)`,
+        pdf: sql<number>`sum(case when ${documents.contentType} = 'application/pdf' then 1 else 0 end)`,
+        sizeBytes: sql<number>`coalesce(sum(${documents.sizeBytes}), 0)`,
+      }).from(documents),
+      db.selectDistinct({ category: documents.category }).from(documents).orderBy(asc(documents.category)),
+    ]);
+    return Response.json({
+      documents: rows,
+      pagination: { page, perPage, total: Number(totalRow?.value ?? 0) },
+      summary: {
+        total: Number(summary?.total ?? 0),
+        thisYear: Number(summary?.thisYear ?? 0),
+        pdf: Number(summary?.pdf ?? 0),
+        sizeBytes: Number(summary?.sizeBytes ?? 0),
+      },
+      filters: { categories: categoryRows.map((row) => row.category) },
+      currentUser: auth.user,
+    });
   } catch (error) { return errorResponse(error); }
 }
 
@@ -51,14 +89,32 @@ export async function POST(request: Request) {
     if (file.size > 10 * 1024 * 1024) {
       return Response.json({ error: "Ukuran file maksimal 10 MB." }, { status: 400 });
     }
+    const fileBuffer = await file.arrayBuffer();
+    if (!fileSignatureMatches(file.type, new Uint8Array(fileBuffer).slice(0, 16))) {
+      return Response.json(
+        { error: "Isi file tidak sesuai dengan jenis file yang dipilih." },
+        { status: 400 },
+      );
+    }
+    const checksumSha256 = await sha256Hex(fileBuffer);
+    const db = await getDb();
+    const [duplicate] = await db
+      .select({ title: documents.title })
+      .from(documents)
+      .where(eq(documents.checksumSha256, checksumSha256))
+      .limit(1);
+    if (duplicate) {
+      return Response.json(
+        { error: `File yang sama sudah diarsipkan sebagai “${duplicate.title}”.` },
+        { status: 409 },
+      );
+    }
 
     const { env } = await import("cloudflare:workers");
     if (!env.BUCKET) throw new Error("Penyimpanan dokumen belum tersedia.");
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const storageKey = `archives/${documentDate.slice(0, 4)}/${crypto.randomUUID()}-${safeName}`;
-    await env.BUCKET.put(storageKey, file.stream(), { httpMetadata: { contentType: file.type } });
-
-    const db = await getDb();
+    await env.BUCKET.put(storageKey, fileBuffer, { httpMetadata: { contentType: file.type } });
     const [document] = await db.insert(documents).values({
       title,
       referenceNumber: String(form.get("referenceNumber") || "").trim(),
@@ -69,6 +125,7 @@ export async function POST(request: Request) {
       storageKey,
       contentType: file.type,
       sizeBytes: file.size,
+      checksumSha256,
       description: String(form.get("description") || "").trim(),
     }).returning();
     await addAudit(auth.user, "Unggah dokumen", "Arsip Dokumen", `${document.title} — ${document.fileName}`);
@@ -78,7 +135,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const auth = await requireRole(request, MANAGE_ROLES);
+    const auth = await requireRole(request, ADMIN_ROLES);
     if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number };
     const id = parsePositiveId(payload.id);

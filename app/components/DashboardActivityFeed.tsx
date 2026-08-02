@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useLanguage } from "./LanguageProvider";
+import Icon, { type IconName } from "./Icon";
 
 export type DashboardActivity = {
   title: string;
@@ -31,21 +33,21 @@ const moduleTargets: Record<string, string> = {
   Keamanan: "Pengaturan",
 };
 
-const activityIcon = (type: string) =>
-  type === "incoming" ? "↓"
-    : type === "outgoing" ? "↑"
-      : type === "resident" ? "♙"
-        : type === "report" ? "▤"
-          : type === "document" ? "□"
-            : type === "settings" ? "⚙"
-              : type === "expense" ? "$"
-                : "•";
+const activityIcon = (type: string): IconName =>
+  type === "incoming" ? "inbox"
+    : type === "outgoing" ? "send"
+      : type === "resident" ? "users"
+        : type === "report" ? "report"
+          : type === "document" ? "archive"
+            : type === "settings" ? "settings"
+              : type === "expense" ? "wallet"
+                : "activity";
 
-function activityTime(value: string) {
+function activityTime(value: string, locale: string) {
   const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("id-ID", {
+  return date.toLocaleString(locale === "pt" ? "pt-PT" : locale === "tet" ? "tet-TL" : "id-ID", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -61,6 +63,7 @@ export default function DashboardActivityFeed({
   error,
   onOpenModule,
 }: DashboardActivityFeedProps) {
+  const { locale, t } = useLanguage();
   const [moduleFilter, setModuleFilter] = useState("Semua");
   const [showAll, setShowAll] = useState(false);
   const modules = useMemo(
@@ -85,37 +88,37 @@ export default function DashboardActivityFeed({
   return (
     <article className="panel activity-panel">
       <div className="panel-title activity-heading">
-        <div><h2>Aktivitas Terbaru</h2><p>Riwayat perubahan tahun {year}</p></div>
+        <div><h2>{t("Aktivitas Terbaru")}</h2><p>{t("Riwayat perubahan tahun")} {year}</p></div>
         <label className="activity-filter">
-          <span>Modul</span>
+          <span>{t("Modul")}</span>
           <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}>
-            <option>Semua</option>
-            {modules.map((module) => <option key={module}>{module}</option>)}
+            <option value="Semua">{t("Semua")}</option>
+            {modules.map((module) => <option key={module} value={module}>{t(module)}</option>)}
           </select>
         </label>
       </div>
       <div className="activity-list">
-        {loading ? <p className="empty">Memuat data aktivitas...</p> : visibleActivities.length ? visibleActivities.map((item, index) => {
+        {loading ? <p className="empty">{t("Memuat data aktivitas...")}</p> : visibleActivities.length ? visibleActivities.map((item, index) => {
           const target = moduleTargets[item.badge];
           return (
             <div className="activity activity-detailed" key={`${item.type}-${item.date}-${index}`}>
-              <span className={`activity-icon a${index % 4}`}>{activityIcon(item.type)}</span>
+              <span className={`activity-icon a${index % 4}`}><Icon name={activityIcon(item.type)} /></span>
               <div className="activity-copy">
-                <strong>{item.title}</strong>
+                <strong>{t(item.title)}</strong>
                 <span>{item.meta}</span>
-                <small>{item.actorName} · {activityTime(item.date)}</small>
+                <small>{item.actorName} · {activityTime(item.date, locale)}</small>
               </div>
               <div className="activity-side">
-                <em>{item.badge}</em>
-                {target && <button onClick={() => onOpenModule(target)}>Buka →</button>}
+                <em>{t(item.badge)}</em>
+                {target && <button onClick={() => onOpenModule(target)}>{t("Buka")} →</button>}
               </div>
             </div>
           );
-        }) : <p className="empty">{error ? "Aktivitas tidak dapat ditampilkan." : `Tidak ada aktivitas yang cocok pada tahun ${year}.`}</p>}
+        }) : <p className="empty">{error ? t("Aktivitas tidak dapat ditampilkan.") : `${t("Tidak ada aktivitas yang cocok pada tahun")} ${year}.`}</p>}
       </div>
       {filtered.length > 8 && (
         <button className="activity-more" onClick={() => setShowAll((value) => !value)}>
-          {showAll ? "Tampilkan lebih sedikit" : `Lihat semua ${filtered.length} aktivitas`}
+          {showAll ? t("Tampilkan lebih sedikit") : `${t("Lihat semua")} ${filtered.length} ${t("aktivitas")}`}
         </button>
       )}
     </article>

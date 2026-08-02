@@ -1,0 +1,1 @@
+ALTER TABLE `documents` ADD `checksum_sha256` text;

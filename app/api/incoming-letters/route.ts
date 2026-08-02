@@ -1,19 +1,49 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { incomingLetters } from "../../../db/schema";
-import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
+import { addAudit, ADMIN_ROLES, auditDifference, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
 import { cleanText, parsePositiveId, requiredText, serverError, validDateFields } from "../validation";
+import { readListQuery } from "../list-query";
 
 export async function GET(request: Request) {
   try {
     const auth = await requireRole(request, READ_ROLES);
     if ("response" in auth) return auth.response;
+    const { page, perPage, offset, query, params } = readListQuery(request);
+    const status = (params.get("status") ?? "").trim();
+    const conditions = [];
+    if (query) {
+      const pattern = `%${query}%`;
+      conditions.push(or(
+        like(incomingLetters.letterNumber, pattern),
+        like(incomingLetters.sender, pattern),
+        like(incomingLetters.subject, pattern),
+      ));
+    }
+    if (status && status !== "Semua") conditions.push(eq(incomingLetters.status, status));
+    const where = conditions.length ? and(...conditions) : undefined;
     const db = await getDb();
-    const rows = await db
-      .select()
-      .from(incomingLetters)
-      .orderBy(desc(incomingLetters.receivedDate), desc(incomingLetters.id));
-    return Response.json({ letters: rows });
+    const [rows, [totalRow], [summary]] = await Promise.all([
+      db.select().from(incomingLetters).where(where).orderBy(desc(incomingLetters.receivedDate), desc(incomingLetters.id)).limit(perPage).offset(offset),
+      db.select({ value: sql<number>`count(*)` }).from(incomingLetters).where(where),
+      db.select({
+        total: sql<number>`count(*)`,
+        fresh: sql<number>`sum(case when ${incomingLetters.status} = 'Baru' then 1 else 0 end)`,
+        processing: sql<number>`sum(case when ${incomingLetters.status} = 'Diproses' then 1 else 0 end)`,
+        completed: sql<number>`sum(case when ${incomingLetters.status} = 'Selesai' then 1 else 0 end)`,
+      }).from(incomingLetters),
+    ]);
+    return Response.json({
+      letters: rows,
+      pagination: { page, perPage, total: Number(totalRow?.value ?? 0) },
+      summary: {
+        total: Number(summary?.total ?? 0),
+        fresh: Number(summary?.fresh ?? 0),
+        processing: Number(summary?.processing ?? 0),
+        completed: Number(summary?.completed ?? 0),
+      },
+      currentUser: auth.user,
+    });
   } catch (error) {
     return serverError(error);
   }
@@ -29,6 +59,8 @@ export async function POST(request: Request) {
     if (validationError) return Response.json({ error: validationError }, { status: 400 });
 
     const db = await getDb();
+    const [before] = await db.select().from(incomingLetters).where(eq(incomingLetters.id, id)).limit(1);
+    if (!before) return Response.json({ error: "Surat tidak ditemukan." }, { status: 404 });
     const [letter] = await db
       .insert(incomingLetters)
       .values({
@@ -84,8 +116,10 @@ export async function PATCH(request: Request) {
       .set(updates)
       .where(eq(incomingLetters.id, id))
       .returning();
-    if (!letter) return Response.json({ error: "Surat tidak ditemukan." }, { status: 404 });
-    await addAudit(auth.user, "Perbarui surat masuk", "Surat Masuk", `ID ${id}`);
+    await addAudit(auth.user, "Perbarui surat masuk", "Surat Masuk", `ID ${id}`, {
+      entityId: id,
+      ...auditDifference(before, letter, Object.keys(updates), ["letterNumber", "receivedDate", "letterDate", "sender", "subject", "category", "status"]),
+    });
     return Response.json({ letter });
   } catch (error) {
     return serverError(error);
@@ -94,7 +128,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const auth = await requireRole(request, MANAGE_ROLES);
+    const auth = await requireRole(request, ADMIN_ROLES);
     if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number };
     const id = parsePositiveId(payload.id);

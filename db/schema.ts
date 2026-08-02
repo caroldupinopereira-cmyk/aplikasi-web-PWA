@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const incomingLetters = sqliteTable("incoming_letters", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -23,9 +23,12 @@ export const outgoingLetters = sqliteTable("outgoing_letters", {
   category: text("category").notNull().default("Umum"),
   signatory: text("signatory").notNull(),
   deliveryMethod: text("delivery_method").notNull().default("Diantar"),
-  status: text("status").notNull().default("Draf"),
-  notes: text("notes").notNull().default(""),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    status: text("status").notNull().default("Draf"),
+    notes: text("notes").notNull().default(""),
+    approvalNote: text("approval_note").notNull().default(""),
+    approvedBy: text("approved_by"),
+    approvedAt: text("approved_at"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const residents = sqliteTable("residents", {
@@ -95,6 +98,7 @@ export const documents = sqliteTable("documents", {
   storageKey: text("storage_key").notNull(),
   contentType: text("content_type").notNull(),
   sizeBytes: integer("size_bytes").notNull(),
+  checksumSha256: text("checksum_sha256"),
   description: text("description").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -109,6 +113,40 @@ export const staffUsers = sqliteTable("staff_users", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const authCredentials = sqliteTable("auth_credentials", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  staffUserId: integer("staff_user_id")
+    .notNull()
+    .unique()
+    .references(() => staffUsers.id, { onDelete: "cascade" }),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  passwordIterations: integer("password_iterations").notNull().default(600000),
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  lockedUntil: text("locked_until"),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  passwordChangedAt: text("password_changed_at")
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const authSessions = sqliteTable("auth_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  staffUserId: integer("staff_user_id")
+    .notNull()
+    .references(() => staffUsers.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  userAgent: text("user_agent").notNull().default("Perangkat tidak dikenal"),
+  expiresAt: text("expires_at").notNull(),
+  lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const auditLogs = sqliteTable("audit_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actorEmail: text("actor_email").notNull(),
@@ -116,5 +154,28 @@ export const auditLogs = sqliteTable("audit_logs", {
   action: text("action").notNull(),
   module: text("module").notNull(),
   details: text("details").notNull().default(""),
+  entityId: text("entity_id"),
+  changedFields: text("changed_fields").notNull().default("[]"),
+  beforeData: text("before_data"),
+  afterData: text("after_data"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const documentSequences = sqliteTable(
+  "document_sequences",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    documentType: text("document_type").notNull(),
+    year: integer("year").notNull(),
+    month: integer("month").notNull(),
+    lastNumber: integer("last_number").notNull().default(0),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("document_sequences_type_year_month_unique").on(
+      table.documentType,
+      table.year,
+      table.month,
+    ),
+  ],
+);

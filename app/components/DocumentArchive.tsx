@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import Pagination from "./Pagination";
-import { exportToCSV } from "../utils/export";
+import { exportAllPages, exportToCSV } from "../utils/export";
 import { useToast, ToastContainer } from "./Toast";
+import { useLanguage } from "./LanguageProvider";
+import Icon from "./Icon";
 
 type DocumentItem = {
   id: number; title: string; referenceNumber: string; documentDate: string; category: string;
@@ -16,6 +18,7 @@ const fileSize = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.ro
 const fileKind = (type: string) => type.includes("pdf") ? "PDF" : type.includes("word") ? "DOC" : type.includes("excel") || type.includes("sheet") ? "XLS" : "IMG";
 
 export default function DocumentArchive({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
+  const { t } = useLanguage();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(initialOpenCreate);
@@ -26,33 +29,38 @@ export default function DocumentArchive({ initialOpenCreate = false }: { initial
   const [saving, setSaving] = useState(false);
   const { toasts, addToast, dismiss } = useToast();
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [stats, setStats] = useState({ total: 0, thisYear: 0, pdf: 0, sizeBytes: 0 });
+  const [integrity, setIntegrity] = useState<{ checked: number; healthy: number; issues: Array<{ id: number; title: string; issue: string; severity: string }> } | null>(null);
+  const [checkingIntegrity, setCheckingIntegrity] = useState(false);
+  const [currentRole, setCurrentRole] = useState("");
   const perPage = 15;
 
-  async function loadDocuments() {
+  const loadDocuments = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/documents"); const data = await response.json();
+      const params = new URLSearchParams({
+        page: String(page), perPage: String(perPage), q: query, category,
+      });
+      const response = await fetch(`/api/documents?${params}`); const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Gagal memuat dokumen.");
       setDocuments(data.documents);
-    } catch { addToast("Penyimpanan arsip sedang disiapkan. Coba muat ulang beberapa saat lagi.", "error"); }
+      setTotal(data.pagination.total);
+      setCategories(data.filters.categories);
+      setStats(data.summary);
+      setCurrentRole(data.currentUser?.role ?? "");
+    } catch { addToast(t("Penyimpanan arsip sedang disiapkan. Coba muat ulang beberapa saat lagi."), "error"); }
     finally { setLoading(false); }
-  }
-  useEffect(() => { void loadDocuments(); }, []);
-
-  const categories = useMemo(() => Array.from(new Set(documents.map((d) => d.category))).sort(), [documents]);
-  const filtered = useMemo(() => {
-    const text = query.toLowerCase();
-    return documents.filter((d) => [d.title, d.referenceNumber, d.fileName, d.description].some((v) => v.toLowerCase().includes(text)) && (category === "Semua" || d.category === category));
-  }, [documents, query, category]);
-
-  const paged = useMemo(() => {
-    const start = (page - 1) * perPage;
-    return filtered.slice(start, start + perPage);
-  }, [filtered, page]);
+  }, [addToast, category, page, query, t]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadDocuments(), 300);
+    return () => window.clearTimeout(timer);
+  }, [loadDocuments]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!file) { addToast("Pilih file yang ingin diarsipkan.", "error"); return; }
+    if (!file) { addToast(t("Pilih file yang ingin diarsipkan."), "error"); return; }
     setSaving(true);
     try {
       const payload = new FormData();
@@ -60,68 +68,84 @@ export default function DocumentArchive({ initialOpenCreate = false }: { initial
       payload.append("file", file);
       const response = await fetch("/api/documents", { method: "POST", body: payload });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      setDocuments((old) => [data.document, ...old]); setForm(blankForm); setFile(null); setShowForm(false); addToast("Dokumen berhasil diarsipkan.", "success");
-    } catch (error) { addToast(error instanceof Error ? error.message : "Gagal mengarsipkan dokumen.", "error"); }
+      setPage(1); await loadDocuments(); setForm(blankForm); setFile(null); setShowForm(false); addToast(t("Dokumen berhasil diarsipkan."), "success");
+    } catch (error) { addToast(t(error instanceof Error ? error.message : "Gagal mengarsipkan dokumen."), "error"); }
     finally { setSaving(false); }
   }
 
   async function remove(id: number) {
-    if (!confirm("Hapus dokumen ini dari arsip? Tindakan ini tidak dapat dibatalkan.")) return;
+    if (!confirm(t("Hapus dokumen ini dari arsip? Tindakan ini tidak dapat dibatalkan."))) return;
     try {
       const response = await fetch("/api/documents", {
         method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
       });
       if (!response.ok) throw new Error("Gagal menghapus dokumen.");
-      setDocuments((old) => old.filter((d) => d.id !== id));
-      addToast("Dokumen berhasil dihapus dari arsip.", "success");
+      await loadDocuments();
+      addToast(t("Dokumen berhasil dihapus dari arsip."), "success");
     } catch (error) {
-      addToast(error instanceof Error ? error.message : "Gagal menghapus dokumen.", "error");
+      addToast(t(error instanceof Error ? error.message : "Gagal menghapus dokumen."), "error");
     }
   }
 
-  const totalSize = documents.reduce((sum, d) => sum + d.sizeBytes, 0);
+  async function checkIntegrity() {
+    setCheckingIntegrity(true);
+    try {
+      const response = await fetch("/api/documents/integrity");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Pemeriksaan gagal.");
+      setIntegrity(result);
+      addToast(t("Pemeriksaan integritas arsip selesai."), "success");
+    } catch (error) {
+      addToast(t(error instanceof Error ? error.message : "Pemeriksaan gagal."), "error");
+    } finally {
+      setCheckingIntegrity(false);
+    }
+  }
+
   const currentYear = new Date().getFullYear();
-  const thisYear = documents.filter((d) => d.archiveYear === currentYear).length;
-  const pdfCount = documents.filter((d) => d.contentType === "application/pdf").length;
 
   return <div className="page mail-page archive-page">
-    <div className="page-heading"><div><p className="eyebrow">PUSAT DOKUMEN</p><h1>Arsip Dokumen</h1><p>Simpan dan temukan kembali dokumen kantor secara teratur.</p></div><button className="primary-button mail-add" onClick={() => setShowForm(true)}><span>＋</span> Unggah Dokumen</button></div>
+    <div className="page-heading"><div><p className="eyebrow">{t("PUSAT DOKUMEN")}</p><h1>{t("Arsip Dokumen")}</h1><p>{t("Simpan dan temukan kembali dokumen kantor secara teratur.")}</p></div><button className="primary-button mail-add" onClick={() => setShowForm(true)}><Icon name="plus" /> {t("Unggah Dokumen")}</button></div>
     <section className="mail-stats archive-stats">
-      <article><span>Total Dokumen</span><strong>{documents.length}</strong><small>Semua file arsip</small></article>
-      <article><span>Arsip Tahun {currentYear}</span><strong>{thisYear}</strong><small>Dokumen tahun berjalan</small></article>
-      <article><span>Dokumen PDF</span><strong>{pdfCount}</strong><small>File format PDF</small></article>
-      <article><span>Total Penyimpanan</span><strong>{fileSize(totalSize)}</strong><small>Ukuran seluruh file</small></article>
+      <article><span>{t("Total Dokumen")}</span><strong>{stats.total}</strong><small>{t("Semua file arsip")}</small></article>
+      <article><span>{t("Arsip Tahun")} {currentYear}</span><strong>{stats.thisYear}</strong><small>{t("Dokumen tahun berjalan")}</small></article>
+      <article><span>{t("Dokumen PDF")}</span><strong>{stats.pdf}</strong><small>{t("File format PDF")}</small></article>
+      <article><span>{t("Total Penyimpanan")}</span><strong>{fileSize(stats.sizeBytes)}</strong><small>{t("Ukuran seluruh file")}</small></article>
     </section>
     <section className="panel mail-table-panel"><div className="mail-toolbar">
-      <label className="mail-search"><span>⌕</span><input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Cari judul, referensi, nama file, atau keterangan..." /></label>
-      <label className="filter-label">Kategori<select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option>Semua</option>{categories.map((c) => <option key={c}>{c}</option>)}</select></label>
-      <button className="refresh-button" onClick={() => void loadDocuments()}>↻ Muat Ulang</button>
-      <button className="export-button" onClick={() => exportToCSV(filtered.map((d, i) => ({ No: i + 1, Judul: d.title, "Nomor Referensi": d.referenceNumber, Tanggal: d.documentDate, Kategori: d.category, "Tahun Arsip": d.archiveYear, "Nama File": d.fileName, Ukuran: `${Math.round(d.sizeBytes / 1024)} KB`, Keterangan: d.description })), "arsip_dokumen")}>↓ Export CSV</button>
+      <label className="mail-search"><span><Icon name="search" /></span><input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder={t("Cari judul, referensi, nama file, atau keterangan...")} /></label>
+      <label className="filter-label">{t("Kategori")}<select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="Semua">{t("Semua")}</option>{categories.map((c) => <option key={c} value={c}>{t(c)}</option>)}</select></label>
+      <button className="refresh-button" onClick={() => void loadDocuments()}><Icon name="refresh" /> {t("Muat Ulang")}</button>
+      <button className="export-button" onClick={() => exportToCSV(documents.map((d, i) => ({ No: (page - 1) * perPage + i + 1, Judul: d.title, "Nomor Referensi": d.referenceNumber, Tanggal: d.documentDate, Kategori: d.category, "Tahun Arsip": d.archiveYear, "Nama File": d.fileName, Ukuran: `${Math.round(d.sizeBytes / 1024)} KB`, Keterangan: d.description })), "arsip_dokumen_halaman")}>↓ {t("Export Halaman")}</button>
+      <button className="export-button" onClick={() => void exportAllPages<DocumentItem>("/api/documents", "documents", { q: query, category }, (d, i) => ({ No: i + 1, Judul: d.title, "Nomor Referensi": d.referenceNumber, Tanggal: d.documentDate, Kategori: d.category, "Tahun Arsip": d.archiveYear, "Nama File": d.fileName, Ukuran: `${Math.round(d.sizeBytes / 1024)} KB`, Keterangan: d.description }), "arsip_dokumen_lengkap").catch((error) => addToast(error instanceof Error ? error.message : t("Export gagal."), "error"))}>⇩ {t("Export Semua")}</button>
+      <button className="print-button" onClick={() => window.print()}><Icon name="printer" /> {t("Cetak/PDF")}</button>
+      <button className="print-button" disabled={checkingIntegrity} onClick={() => void checkIntegrity()}>{checkingIntegrity ? t("Memeriksa...") : `✓ ${t("Periksa Integritas")}`}</button>
     </div><div className="table-wrap"><table className="mail-table archive-table">
-      <thead><tr><th>No.</th><th>Dokumen</th><th>Kategori</th><th>Tanggal/Tahun</th><th>File</th><th>Aksi</th></tr></thead>
-      <tbody>{loading ? <tr><td colSpan={6} className="table-empty">Memuat arsip...</td></tr> : filtered.length === 0 ? <tr><td colSpan={6} className="table-empty">Belum ada dokumen yang sesuai.</td></tr> : paged.map((d, i) => <tr key={d.id}>
-        <td>{(page - 1) * perPage + i + 1}</td><td><strong>{d.title}</strong><small>{d.referenceNumber || "Tanpa nomor referensi"}</small></td><td><span className="category-pill">{d.category}</span></td><td><strong>{d.documentDate}</strong><small>Arsip {d.archiveYear}</small></td>
+      <thead><tr><th>No.</th><th>{t("Dokumen")}</th><th>{t("Kategori")}</th><th>{t("Tanggal/Tahun")}</th><th>{t("File")}</th><th>{t("Aksi")}</th></tr></thead>
+      <tbody>{loading ? <tr><td colSpan={6} className="table-empty">{t("Memuat arsip...")}</td></tr> : documents.length === 0 ? <tr><td colSpan={6} className="table-empty">{t("Belum ada dokumen yang sesuai.")}</td></tr> : documents.map((d, i) => <tr key={d.id}>
+        <td>{(page - 1) * perPage + i + 1}</td><td><strong>{d.title}</strong><small>{d.referenceNumber || t("Tanpa nomor referensi")}</small></td><td><span className="category-pill">{t(d.category)}</span></td><td><strong>{d.documentDate}</strong><small>{t("Arsip")} {d.archiveYear}</small></td>
         <td><span className={`file-type file-${fileKind(d.contentType).toLowerCase()}`}>{fileKind(d.contentType)}</span><strong className="file-name">{d.fileName}</strong><small>{fileSize(d.sizeBytes)}</small></td>
         <td className="actions-cell">
-          <a className="download-button" href={`/api/documents/${d.id}`}>↓ Unduh</a>
-          <button className="action-btn delete" onClick={() => void remove(d.id)} title="Hapus">✕</button>
+          <a className="download-button" href={`/api/documents/${d.id}`}><Icon name="download" size={15} /> {t("Unduh")}</a>
+          {currentRole === "Administrator" && <button className="action-btn delete" onClick={() => void remove(d.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}
         </td>
       </tr>)}</tbody>
-    </table></div><div className="table-footer">Menampilkan {paged.length} dari {filtered.length} dokumen</div>
-      <Pagination currentPage={page} totalItems={filtered.length} perPage={perPage} onPageChange={setPage} />
+    </table></div><div className="table-footer">{t("Menampilkan")} {documents.length} {t("dari")} {total} {t("dokumen")}</div>
+      <Pagination currentPage={page} totalItems={total} perPage={perPage} onPageChange={setPage} />
     </section>
+    {integrity && <section className="panel integrity-panel"><div className="panel-title"><div><h2>{t("Integritas Arsip")}</h2><p>{integrity.healthy} {t("dari")} {integrity.checked} {t("dokumen sehat")}</p></div><button onClick={() => setIntegrity(null)}>{t("Tutup")}</button></div>{integrity.issues.length === 0 ? <p className="empty">{t("Semua metadata D1 sesuai dengan file R2.")}</p> : <div className="integrity-list">{integrity.issues.map((issue, index) => <div key={`${issue.id}-${index}`} className={issue.severity}><strong>{issue.title}</strong><span>{issue.issue}</span></div>)}</div>}</section>}
 
     {showForm && <div className="modal-layer" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setShowForm(false)}>
-      <section className="mail-modal" role="dialog" aria-modal="true" aria-labelledby="archive-form-title"><div className="modal-heading"><div><p className="eyebrow">FORMULIR ARSIP</p><h2 id="archive-form-title">Unggah Dokumen</h2></div><button aria-label="Tutup formulir" onClick={() => setShowForm(false)}>×</button></div>
+      <section className="mail-modal" role="dialog" aria-modal="true" aria-labelledby="archive-form-title"><div className="modal-heading"><div><p className="eyebrow">{t("FORMULIR ARSIP")}</p><h2 id="archive-form-title">{t("Unggah Dokumen")}</h2></div><button aria-label={t("Tutup formulir")} onClick={() => setShowForm(false)}>×</button></div>
       <form onSubmit={submit}><div className="form-grid">
-        <label className="wide">Judul Dokumen *<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Judul dokumen" /></label>
-        <label>Nomor Referensi<input value={form.referenceNumber} onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })} placeholder="Nomor surat/dokumen" /></label>
-        <label>Tanggal Dokumen *<input required type="date" value={form.documentDate} onChange={(e) => setForm({ ...form, documentDate: e.target.value, archiveYear: Number(e.target.value.slice(0, 4)) })} /></label>
-        <label>Kategori<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}><option>Surat</option><option>Laporan</option><option>Keuangan</option><option>Data Penduduk</option><option>Peraturan</option><option>Foto Kegiatan</option><option>Lainnya</option></select></label>
-        <label>Tahun Arsip<input min="2000" max="2100" type="number" value={form.archiveYear} onChange={(e) => setForm({ ...form, archiveYear: Number(e.target.value) })} /></label>
-        <label className="wide">File *<input required type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] || null)} /><small className="field-help">PDF, Word, Excel, JPG, atau PNG. Maksimal 10 MB.</small></label>
-        <label className="wide">Keterangan<textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Keterangan isi dokumen (opsional)" /></label>
-      </div><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>Batal</button><button className="save-button" disabled={saving}>{saving ? "Mengunggah..." : "Simpan ke Arsip"}</button></div></form></section>
+        <label className="wide">{t("Judul Dokumen")} *<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={t("Judul dokumen")} /></label>
+        <label>{t("Nomor Referensi")}<input value={form.referenceNumber} onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })} placeholder={t("Nomor surat/dokumen")} /></label>
+        <label>{t("Tanggal Dokumen")} *<input required type="date" value={form.documentDate} onChange={(e) => setForm({ ...form, documentDate: e.target.value, archiveYear: Number(e.target.value.slice(0, 4)) })} /></label>
+        <label>{t("Kategori")}<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{["Surat", "Laporan", "Keuangan", "Data Penduduk", "Peraturan", "Foto Kegiatan", "Lainnya"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>
+        <label>{t("Tahun Arsip")}<input min="2000" max="2100" type="number" value={form.archiveYear} onChange={(e) => setForm({ ...form, archiveYear: Number(e.target.value) })} /></label>
+        <label className="wide">{t("File")} *<input required type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] || null)} /><small className="field-help">{t("PDF, Word, Excel, JPG, atau PNG. Maksimal 10 MB.")}</small></label>
+        <label className="wide">{t("Keterangan")}<textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t("Keterangan isi dokumen (opsional)")} /></label>
+      </div><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>{t("Batal")}</button><button className="save-button" disabled={saving}>{t(saving ? "Mengunggah..." : "Simpan ke Arsip")}</button></div></form></section>
     </div>}
     <ToastContainer toasts={toasts} dismiss={dismiss} />
   </div>;

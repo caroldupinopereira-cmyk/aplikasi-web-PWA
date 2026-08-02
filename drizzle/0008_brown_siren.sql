@@ -1,0 +1,1 @@
+ALTER TABLE `auth_sessions` ADD `user_agent` text DEFAULT 'Perangkat tidak dikenal' NOT NULL;

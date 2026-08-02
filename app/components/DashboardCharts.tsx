@@ -1,3 +1,7 @@
+"use client";
+
+import { useLanguage } from "./LanguageProvider";
+
 type DashboardChartsProps = {
   year: number;
   incoming: number[];
@@ -26,6 +30,7 @@ export default function DashboardCharts({
   totalBudget,
   totalExpense,
 }: DashboardChartsProps) {
+  const { t } = useLanguage();
   const maximumLetters = Math.max(0, ...incoming, ...outgoing);
   const maximumExpense = Math.max(0, ...expenses);
   const hasLetters = incoming.some(Boolean) || outgoing.some(Boolean);
@@ -33,16 +38,16 @@ export default function DashboardCharts({
   const comparisonMaximum = Math.max(totalBudget, totalExpense, 1);
 
   return (
-    <section className="charts-grid" aria-label={`Grafik Dashboard tahun ${year}`}>
+    <section className="charts-grid" aria-label={`${t("Dashboard")} ${year}`}>
       <article className="panel chart-panel">
         <div className="panel-title">
           <div>
-            <h2>Surat per Bulan</h2>
-            <p>Surat masuk dan keluar tahun {year}</p>
+            <h2>{t("Surat per Bulan")}</h2>
+            <p>{t("Surat masuk dan keluar tahun")} {year}</p>
           </div>
           <div className="chart-legend">
-            <span><i className="incoming-dot" />Masuk</span>
-            <span><i className="outgoing-dot" />Keluar</span>
+            <span><i className="incoming-dot" />{t("Masuk")}</span>
+            <span><i className="outgoing-dot" />{t("Keluar")}</span>
           </div>
         </div>
         <div className="monthly-chart">
@@ -52,26 +57,26 @@ export default function DashboardCharts({
                 <i
                   className="chart-bar incoming-bar"
                   style={{ height: height(incoming[index] ?? 0, maximumLetters) }}
-                  title={`${month}: ${incoming[index] ?? 0} surat masuk`}
+                  title={`${month}: ${incoming[index] ?? 0} ${t("Surat masuk")}`}
                 />
                 <i
                   className="chart-bar outgoing-bar"
                   style={{ height: height(outgoing[index] ?? 0, maximumLetters) }}
-                  title={`${month}: ${outgoing[index] ?? 0} surat keluar`}
+                  title={`${month}: ${outgoing[index] ?? 0} ${t("Surat keluar")}`}
                 />
               </div>
               <span>{month}</span>
             </div>
           ))}
-          {!hasLetters && <p className="chart-empty">Belum ada data surat pada tahun {year}.</p>}
+          {!hasLetters && <p className="chart-empty">{t("Belum ada data surat pada tahun")} {year}.</p>}
         </div>
       </article>
 
       <article className="panel chart-panel">
         <div className="panel-title">
           <div>
-            <h2>Realisasi Keuangan</h2>
-            <p>Pengeluaran per bulan tahun {year}</p>
+            <h2>{t("Realisasi Keuangan")}</h2>
+            <p>{t("Pengeluaran per bulan tahun")} {year}</p>
           </div>
         </div>
         <div className="monthly-chart expense-chart">
@@ -87,15 +92,15 @@ export default function DashboardCharts({
               <span>{month}</span>
             </div>
           ))}
-          {!hasExpenses && <p className="chart-empty">Belum ada pengeluaran pada tahun {year}.</p>}
+          {!hasExpenses && <p className="chart-empty">{t("Belum ada pengeluaran pada tahun")} {year}.</p>}
         </div>
         <div className="budget-comparison">
           <div>
-            <span>Anggaran <strong>{money(totalBudget)}</strong></span>
+            <span>{t("Anggaran")} <strong>{money(totalBudget)}</strong></span>
             <i><b style={{ width: `${(totalBudget / comparisonMaximum) * 100}%` }} /></i>
           </div>
           <div>
-            <span>Realisasi <strong>{money(totalExpense)}</strong></span>
+            <span>{t("Realisasi")} <strong>{money(totalExpense)}</strong></span>
             <i><b className="expense-fill" style={{ width: `${(totalExpense / comparisonMaximum) * 100}%` }} /></i>
           </div>
         </div>

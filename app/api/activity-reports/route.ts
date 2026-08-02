@@ -1,8 +1,9 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { activityReports } from "../../../db/schema";
-import { addAudit, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
+import { addAudit, ADMIN_ROLES, auditDifference, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
 import { parsePositiveId, validDateFields } from "../validation";
+import { readListQuery } from "../list-query";
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Terjadi kesalahan.";
@@ -13,9 +14,45 @@ export async function GET(request: Request) {
   try {
     const auth = await requireRole(request, READ_ROLES);
     if ("response" in auth) return auth.response;
+    const { page, perPage, offset, query, params } = readListQuery(request);
+    const month = (params.get("month") ?? "").trim();
+    const conditions = [];
+    if (query) {
+      const pattern = `%${query}%`;
+      conditions.push(or(
+        like(activityReports.reportNumber, pattern),
+        like(activityReports.title, pattern),
+        like(activityReports.location, pattern),
+        like(activityReports.responsiblePerson, pattern),
+      ));
+    }
+    if (month && month !== "Semua") conditions.push(like(activityReports.activityDate, `${month}-%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const currentMonth = new Date().toISOString().slice(0, 7);
     const db = await getDb();
-    const rows = await db.select().from(activityReports).orderBy(desc(activityReports.activityDate), desc(activityReports.id));
-    return Response.json({ reports: rows });
+    const [rows, [totalRow], [summary], monthRows] = await Promise.all([
+      db.select().from(activityReports).where(where).orderBy(desc(activityReports.activityDate), desc(activityReports.id)).limit(perPage).offset(offset),
+      db.select({ value: sql<number>`count(*)` }).from(activityReports).where(where),
+      db.select({
+        total: sql<number>`count(*)`,
+        participants: sql<number>`coalesce(sum(${activityReports.participantCount}), 0)`,
+        completed: sql<number>`sum(case when ${activityReports.status} = 'Selesai' then 1 else 0 end)`,
+        thisMonth: sql<number>`sum(case when ${activityReports.activityDate} like ${`${currentMonth}-%`} then 1 else 0 end)`,
+      }).from(activityReports),
+      db.selectDistinct({ month: sql<string>`substr(${activityReports.activityDate}, 1, 7)` }).from(activityReports).orderBy(desc(sql`substr(${activityReports.activityDate}, 1, 7)`)),
+    ]);
+    return Response.json({
+      reports: rows,
+      pagination: { page, perPage, total: Number(totalRow?.value ?? 0) },
+      summary: {
+        total: Number(summary?.total ?? 0),
+        participants: Number(summary?.participants ?? 0),
+        completed: Number(summary?.completed ?? 0),
+        thisMonth: Number(summary?.thisMonth ?? 0),
+      },
+      filters: { months: monthRows.map((row) => row.month) },
+      currentUser: auth.user,
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -88,9 +125,13 @@ export async function PATCH(request: Request) {
     }
 
     const db = await getDb();
+    const [before] = await db.select().from(activityReports).where(eq(activityReports.id, id)).limit(1);
+    if (!before) return Response.json({ error: "Laporan tidak ditemukan." }, { status: 404 });
     const [report] = await db.update(activityReports).set(updates).where(eq(activityReports.id, id)).returning();
-    if (!report) return Response.json({ error: "Laporan tidak ditemukan." }, { status: 404 });
-    await addAudit(auth.user, "Perbarui laporan kegiatan", "Laporan Kegiatan", `ID ${id}`);
+    await addAudit(auth.user, "Perbarui laporan kegiatan", "Laporan Kegiatan", `ID ${id}`, {
+      entityId: id,
+      ...auditDifference(before, report, Object.keys(updates), ["reportNumber", "title", "activityDate", "location", "activityType", "responsiblePerson", "participantCount", "status"]),
+    });
     return Response.json({ report });
   } catch (error) {
     return errorResponse(error);
@@ -99,7 +140,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const auth = await requireRole(request, MANAGE_ROLES);
+    const auth = await requireRole(request, ADMIN_ROLES);
     if ("response" in auth) return auth.response;
     const payload = (await request.json()) as { id?: number };
     const id = parsePositiveId(payload.id);
