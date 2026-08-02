@@ -728,25 +728,53 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* Portal Akses Staf */
-.portal-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(390px, .85fr); background: #f4f8f9; }
-.portal-intro { min-height: 100vh; padding: clamp(34px, 6vw, 78px); display: flex; flex-direction: column; background: linear-gradient(145deg, #0d354a, #14566a 58%, #1d7480); color: #fff; }
-.portal-brand { display: flex; gap: 13px; align-items: center; }
+.portal-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(390px, .85fr); overflow: hidden; background: #f4f8f9; }
+.portal-intro {
+  position: relative; isolation: isolate; min-height: 100vh; padding: clamp(34px, 6vw, 78px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(145deg, #0d354a, #14566a 58%, #1d7480); color: #fff;
+}
+.portal-intro::before, .portal-intro::after {
+  position: absolute; z-index: -1; content: ""; pointer-events: none;
+}
+.portal-intro::before {
+  width: min(46vw, 620px); aspect-ratio: 1; right: -18%; top: -14%; border-radius: 42% 58% 64% 36%;
+  background: radial-gradient(circle at 38% 38%, rgb(120 218 218 / 24%), rgb(120 218 218 / 3%) 67%, transparent 68%);
+  animation: portal-orbit 14s ease-in-out infinite alternate;
+}
+.portal-intro::after {
+  width: min(39vw, 530px); aspect-ratio: 1; left: -18%; bottom: -24%; border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 50%; box-shadow: 0 0 0 48px rgb(255 255 255 / 3%), 0 0 0 104px rgb(255 255 255 / 2%);
+  animation: portal-drift 12s ease-in-out infinite alternate;
+}
+.portal-brand { display: flex; gap: 13px; align-items: center; animation: portal-reveal-down .65s ease-out both; }
 .portal-top { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .portal-top .language-trigger { border-color: rgb(255 255 255 / 25%); background: rgb(255 255 255 / 10%); color: #fff; }
-.portal-logo { width: 54px; height: 54px; flex: 0 0 auto; border-radius: 15px; background: #fff url("/images/logo-posto-administrativo.png") center / contain no-repeat; box-shadow: 0 10px 26px rgb(0 0 0 / 22%); }
+.portal-logo { width: 54px; height: 54px; flex: 0 0 auto; border-radius: 15px; background: #fff url("/images/logo-posto-administrativo.png") center / contain no-repeat; box-shadow: 0 10px 26px rgb(0 0 0 / 22%); animation: portal-logo-float 5s ease-in-out 1s infinite; }
 .portal-brand strong, .portal-brand span { display: block; }
 .portal-brand strong { font-size: 15px; }
 .portal-brand span { margin-top: 5px; color: #b8d3da; font-size: 11px; }
 .portal-copy { max-width: 650px; margin: auto 0; padding-block: 70px; }
-.portal-copy .eyebrow { color: #8fd0d2 !important; }
-.portal-copy h1 { max-width: 620px; margin: 0; font-size: clamp(34px, 5vw, 66px); line-height: 1.05; letter-spacing: -.045em; }
-.portal-copy > p:last-child { max-width: 570px; margin: 24px 0 0; color: #c5dce1; font-size: 15px; line-height: 1.75; }
-.portal-security { display: grid; gap: 9px; color: #c3dce0; font-size: 11px; }
-.portal-access { padding: clamp(28px, 6vw, 80px); display: grid; place-items: center; align-content: center; }
-.portal-access-card { width: min(100%, 470px); padding: clamp(25px, 4vw, 42px); border: 1px solid #d8e5e8; border-radius: 22px; background: #fff; box-shadow: 0 24px 60px rgb(19 61 79 / 12%); }
+.portal-copy .eyebrow { color: #8fd0d2 !important; animation: portal-reveal-up .55s .15s ease-out both; }
+.portal-copy h1 { max-width: 620px; margin: 0; font-size: clamp(34px, 5vw, 66px); line-height: 1.05; letter-spacing: -.045em; animation: portal-reveal-up .7s .25s ease-out both; }
+.portal-copy > p:last-child { max-width: 570px; margin: 24px 0 0; color: #c5dce1; font-size: 15px; line-height: 1.75; animation: portal-reveal-up .7s .38s ease-out both; }
+.portal-security { display: grid; gap: 9px; color: #c3dce0; font-size: 11px; animation: portal-reveal-up .7s .52s ease-out both; }
+.portal-access {
+  position: relative; padding: clamp(28px, 6vw, 80px); display: grid; place-items: center; align-content: center;
+  background:
+    linear-gradient(rgb(10 49 62 / 48%), rgb(10 49 62 / 64%)),
+    url("/images/portal-waterfall.png") center / cover no-repeat;
+  animation: portal-panel-in .72s cubic-bezier(.22, 1, .36, 1) both;
+}
+.portal-access-card {
+  width: min(100%, 470px); padding: clamp(25px, 4vw, 42px); border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 22px; background: rgb(255 255 255 / 95%); backdrop-filter: blur(8px);
+  box-shadow: 0 24px 60px rgb(4 31 42 / 30%); transition: transform .3s ease, box-shadow .3s ease;
+}
+.portal-access-card:hover { transform: translateY(-3px); box-shadow: 0 30px 70px rgb(19 61 79 / 16%); }
 .portal-access-card > h2 { margin: 0; color: #183f53; font-size: 28px; }
 .portal-access-card > p:not(.eyebrow) { margin: 12px 0 0; color: #71848e; font-size: 12px; line-height: 1.65; }
-.portal-access > small { width: min(100%, 470px); margin-top: 18px; color: #7c8e97; font-size: 9px; line-height: 1.6; text-align: center; }
+.portal-access > small { width: min(100%, 470px); margin-top: 18px; color: rgb(255 255 255 / 88%); font-size: 9px; line-height: 1.6; text-align: center; text-shadow: 0 1px 5px rgb(0 0 0 / 55%); }
 .portal-status { margin-top: 25px; padding: 22px; border: 1px solid #dbe6e9; border-radius: 14px; background: #f7fafb; text-align: center; }
 .portal-status-icon { width: 38px; height: 38px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: 50%; background: #e7eff1; color: #53717d; font-size: 18px; font-weight: 800; }
 .portal-status h2, .portal-status p { margin: 0; }
@@ -763,12 +791,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .portal-primary { padding: 12px; background: #15677e; color: #fff; font-size: 11px; font-weight: 750; }
 .portal-signout { color: #607d89; font-size: 9px; }
 .auth-form { margin-top: 24px; display: grid; gap: 15px; }
-.auth-form label { display: grid; gap: 7px; color: #3c5b69; font-size: 11px; font-weight: 700; }
+.auth-form label { display: grid; gap: 7px; color: #3c5b69; font-size: 11px; font-weight: 700; animation: portal-reveal-up .45s ease-out both; }
+.auth-form label:nth-of-type(1) { animation-delay: .25s; }
+.auth-form label:nth-of-type(2) { animation-delay: .34s; }
 .auth-form input {
   width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid #d4e0e4;
   border-radius: 10px; outline: none; background: #fbfcfd; color: #1f3f4e; font: inherit;
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease, transform .2s ease;
 }
-.auth-form input:focus { border-color: #5b9dae; background: #fff; box-shadow: 0 0 0 4px rgb(30 119 140 / 10%); }
+.auth-form input:focus { border-color: #5b9dae; background: #fff; box-shadow: 0 0 0 4px rgb(30 119 140 / 10%); transform: translateY(-1px); }
 .auth-password { position: relative; }
 .auth-password input { padding-right: 92px; }
 .auth-password button {
@@ -778,10 +809,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .auth-two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .auth-submit, .auth-secondary {
   min-height: 44px; border-radius: 10px; font-size: 11px; font-weight: 750; cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
 }
 .auth-submit { border: 1px solid #15677e; background: #15677e; color: #fff; }
-.auth-submit:hover { background: #10566a; }
+.auth-submit:hover { transform: translateY(-2px); background: #10566a; box-shadow: 0 10px 22px rgb(21 103 126 / 22%); }
+.auth-submit:active { transform: translateY(0); box-shadow: none; }
 .auth-submit:disabled { cursor: wait; opacity: .65; }
+.auth-submit:disabled::after { width: 12px; height: 12px; margin-left: 8px; display: inline-block; border: 2px solid rgb(255 255 255 / 42%); border-top-color: #fff; border-radius: 50%; content: ""; vertical-align: -3px; animation: portal-spin .7s linear infinite; }
 .auth-secondary { border: 1px solid #d5e1e4; background: #fff; color: #526f7c; }
 .auth-message { margin: 0 !important; padding: 11px 12px; border-radius: 10px; font-size: 10px !important; }
 .auth-message.error { border: 1px solid #efcec8; background: #fff4f2; color: #914c43 !important; }
@@ -789,6 +823,42 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .auth-rule { margin-top: -7px; color: #7b8d95; font-size: 9px; line-height: 1.5; }
 .auth-help { margin: 0 !important; text-align: center; font-size: 10px !important; }
 .auth-help a { color: #15677e; font-weight: 750; }
+
+@keyframes portal-reveal-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes portal-reveal-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes portal-panel-in {
+  from { opacity: 0; transform: translateX(34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes portal-logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes portal-orbit {
+  from { transform: translate3d(0, 0, 0) rotate(0); }
+  to { transform: translate3d(-28px, 34px, 0) rotate(12deg); }
+}
+@keyframes portal-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(35px, -24px, 0) scale(1.05); }
+}
+@keyframes portal-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-intro::before, .portal-intro::after, .portal-brand, .portal-logo,
+  .portal-copy .eyebrow, .portal-copy h1, .portal-copy > p:last-child,
+  .portal-security, .portal-access, .auth-form label, .auth-submit:disabled::after {
+    animation: none;
+  }
+  .portal-access-card, .auth-form input, .auth-submit, .auth-secondary { transition: none; }
+  .portal-access-card:hover, .auth-form input:focus, .auth-submit:hover { transform: none; }
+}
 .dashboard-logout {
   width: 100%; min-height: 36px; margin-top: 9px; border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 9px; background: rgb(255 255 255 / 6%); color: #c8dce2;

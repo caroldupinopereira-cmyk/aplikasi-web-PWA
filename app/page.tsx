@@ -238,7 +238,7 @@ export default function Home() {
           <div className="brand-mark" role="img" aria-label="Logo Posto Administrativo" />
           <div>
             <strong>Sistema Administrasaun</strong>
-            <span>Postu Administrativo</span>
+            <span>Postu Administrativo Uatu-Carbau</span>
           </div>
         </div>
 

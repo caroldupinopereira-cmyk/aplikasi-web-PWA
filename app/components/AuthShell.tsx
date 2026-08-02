@@ -32,7 +32,7 @@ export default function AuthShell({
             />
             <div>
               <strong>Sistema Administrasaun</strong>
-              <span>Postu Administrativo</span>
+              <span>Postu Administrativo Uatu-Carbau</span>
             </div>
           </div>
           <LanguageSwitcher />
