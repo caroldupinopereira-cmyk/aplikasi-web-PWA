@@ -6,6 +6,8 @@ import { exportAllPages, exportToCSV } from "../utils/export";
 import { useToast, ToastContainer } from "./Toast";
 import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
+import { roleHasCapability } from "../roles";
+import RoleAccessNotice from "./RoleAccessNotice";
 
 type DocumentItem = {
   id: number; title: string; referenceNumber: string; documentDate: string; category: string;
@@ -36,6 +38,8 @@ export default function DocumentArchive({ initialOpenCreate = false }: { initial
   const [checkingIntegrity, setCheckingIntegrity] = useState(false);
   const [currentRole, setCurrentRole] = useState("");
   const perPage = 15;
+  const canWrite = roleHasCapability(currentRole, "writeOperational");
+  const canCheckIntegrity = roleHasCapability(currentRole, "approve");
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -105,7 +109,8 @@ export default function DocumentArchive({ initialOpenCreate = false }: { initial
   const currentYear = new Date().getFullYear();
 
   return <div className="page mail-page archive-page">
-    <div className="page-heading"><div><p className="eyebrow">{t("PUSAT DOKUMEN")}</p><h1>{t("Arsip Dokumen")}</h1><p>{t("Simpan dan temukan kembali dokumen kantor secara teratur.")}</p></div><button className="primary-button mail-add" onClick={() => setShowForm(true)}><Icon name="plus" /> {t("Unggah Dokumen")}</button></div>
+    <div className="page-heading"><div><p className="eyebrow">{t("PUSAT DOKUMEN")}</p><h1>{t("Arsip Dokumen")}</h1><p>{t("Simpan dan temukan kembali dokumen kantor secara teratur.")}</p></div>{canWrite && <button className="primary-button mail-add" onClick={() => setShowForm(true)}><Icon name="plus" /> {t("Unggah Dokumen")}</button>}</div>
+    <RoleAccessNotice role={currentRole} />
     <section className="mail-stats archive-stats">
       <article><span>{t("Total Dokumen")}</span><strong>{stats.total}</strong><small>{t("Semua file arsip")}</small></article>
       <article><span>{t("Arsip Tahun")} {currentYear}</span><strong>{stats.thisYear}</strong><small>{t("Dokumen tahun berjalan")}</small></article>
@@ -119,7 +124,7 @@ export default function DocumentArchive({ initialOpenCreate = false }: { initial
       <button className="export-button" onClick={() => exportToCSV(documents.map((d, i) => ({ No: (page - 1) * perPage + i + 1, Judul: d.title, "Nomor Referensi": d.referenceNumber, Tanggal: d.documentDate, Kategori: d.category, "Tahun Arsip": d.archiveYear, "Nama File": d.fileName, Ukuran: `${Math.round(d.sizeBytes / 1024)} KB`, Keterangan: d.description })), "arsip_dokumen_halaman")}>↓ {t("Export Halaman")}</button>
       <button className="export-button" onClick={() => void exportAllPages<DocumentItem>("/api/documents", "documents", { q: query, category }, (d, i) => ({ No: i + 1, Judul: d.title, "Nomor Referensi": d.referenceNumber, Tanggal: d.documentDate, Kategori: d.category, "Tahun Arsip": d.archiveYear, "Nama File": d.fileName, Ukuran: `${Math.round(d.sizeBytes / 1024)} KB`, Keterangan: d.description }), "arsip_dokumen_lengkap").catch((error) => addToast(error instanceof Error ? error.message : t("Export gagal."), "error"))}>⇩ {t("Export Semua")}</button>
       <button className="print-button" onClick={() => window.print()}><Icon name="printer" /> {t("Cetak/PDF")}</button>
-      <button className="print-button" disabled={checkingIntegrity} onClick={() => void checkIntegrity()}>{checkingIntegrity ? t("Memeriksa...") : `✓ ${t("Periksa Integritas")}`}</button>
+      {canCheckIntegrity && <button className="print-button" disabled={checkingIntegrity} onClick={() => void checkIntegrity()}>{!checkingIntegrity && <Icon name="shield" />} {checkingIntegrity ? t("Memeriksa...") : t("Periksa Integritas")}</button>}
     </div><div className="table-wrap"><table className="mail-table archive-table">
       <thead><tr><th>No.</th><th>{t("Dokumen")}</th><th>{t("Kategori")}</th><th>{t("Tanggal/Tahun")}</th><th>{t("File")}</th><th>{t("Aksi")}</th></tr></thead>
       <tbody>{loading ? <tr><td colSpan={6} className="table-empty">{t("Memuat arsip...")}</td></tr> : documents.length === 0 ? <tr><td colSpan={6} className="table-empty">{t("Belum ada dokumen yang sesuai.")}</td></tr> : documents.map((d, i) => <tr key={d.id}>

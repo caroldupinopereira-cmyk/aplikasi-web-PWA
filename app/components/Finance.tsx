@@ -6,6 +6,8 @@ import { exportToCSV } from "../utils/export";
 import { useToast, ToastContainer } from "./Toast";
 import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
+import { roleHasCapability } from "../roles";
+import RoleAccessNotice from "./RoleAccessNotice";
 
 type Budget = { id: number; budgetYear: number; programName: string; category: string; amountCents: number; notes: string };
 type Expense = { id: number; receiptNumber: string; expenseDate: string; description: string; category: string; programName: string; payee: string; paymentMethod: string; amountCents: number; status: string; notes: string };
@@ -28,6 +30,7 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
   const [saving, setSaving] = useState(false);
   const { toasts, addToast, dismiss } = useToast();
   const [page, setPage] = useState(1);
+  const [currentRole, setCurrentRole] = useState("");
   const perPage = 15;
 
   const loadFinance = useCallback(async () => {
@@ -35,7 +38,7 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
     try {
       const response = await fetch("/api/finance"); const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Gagal memuat keuangan.");
-      setBudgets(data.budgets); setExpenses(data.expenses);
+      setBudgets(data.budgets); setExpenses(data.expenses); setCurrentRole(data.currentUser?.role ?? "");
     } catch { addToast(t("Database sedang disiapkan. Coba muat ulang beberapa saat lagi."), "error"); }
     finally { setLoading(false); }
   }, [addToast, t]);
@@ -59,6 +62,8 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
   const totalExpense = expenses.reduce((sum, e) => sum + e.amountCents, 0);
   const verified = expenses.filter((e) => e.status === "Diverifikasi").reduce((sum, e) => sum + e.amountCents, 0);
   const percent = totalBudget ? Math.min(100, Math.round(totalExpense / totalBudget * 100)) : 0;
+  const canManageFinance = roleHasCapability(currentRole, "manageFinance");
+  const canDelete = roleHasCapability(currentRole, "deletePermanent");
 
   function openExpenseForm(expense?: Expense) {
     setPage(1);
@@ -143,7 +148,8 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
   }
 
   return <div className="page mail-page finance-page">
-    <div className="page-heading"><div><p className="eyebrow">{t("KEUANGAN KANTOR")}</p><h1>{t("Anggaran & Pengeluaran")}</h1><p>{t("Pantau alokasi, realisasi, bukti transaksi, dan sisa anggaran.")}</p></div><div className="finance-actions"><button className="secondary-button" onClick={() => { setEditingExpense(null); setBudgetForm(budgetBlank); setDialog("budget"); }}><Icon name="plus" /> {t("Alokasi Anggaran")}</button><button className="primary-button mail-add" onClick={() => openExpenseForm()}><Icon name="plus" /> {t("Catat Pengeluaran")}</button></div></div>
+    <div className="page-heading"><div><p className="eyebrow">{t("KEUANGAN KANTOR")}</p><h1>{t("Anggaran & Pengeluaran")}</h1><p>{t("Pantau alokasi, realisasi, bukti transaksi, dan sisa anggaran.")}</p></div>{canManageFinance && <div className="finance-actions"><button className="secondary-button" onClick={() => { setEditingExpense(null); setBudgetForm(budgetBlank); setDialog("budget"); }}><Icon name="plus" /> {t("Alokasi Anggaran")}</button><button className="primary-button mail-add" onClick={() => openExpenseForm()}><Icon name="plus" /> {t("Catat Pengeluaran")}</button></div>}</div>
+    <RoleAccessNotice role={currentRole} area="finance" />
     <section className="mail-stats finance-stats">
       <article><span>{t("Total Anggaran")}</span><strong>{money(totalBudget)}</strong><small>{t("Tahun anggaran")} {new Date().getFullYear()}</small></article>
       <article><span>{t("Total Realisasi")}</span><strong>{money(totalExpense)}</strong><small>{percent}% {t("telah digunakan")}</small></article>
@@ -158,7 +164,7 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
         <thead><tr><th>No.</th><th>{t("Program")}</th><th>{t("Kategori")}</th><th>{t("Jumlah")}</th><th>{t("Catatan")}</th><th>{t("Aksi")}</th></tr></thead>
         <tbody>{budgets.map((b, i) => <tr key={b.id}>
           <td>{i + 1}</td><td><strong>{b.programName}</strong><small>{t("Tahun")} {b.budgetYear}</small></td><td><span className="category-pill">{t(b.category)}</span></td><td className="amount-cell">{money(b.amountCents)}</td><td>{b.notes || "—"}</td>
-          <td className="actions-cell"><button className="action-btn delete" onClick={() => void removeBudget(b.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button></td>
+          <td className="actions-cell">{canDelete && <button className="action-btn delete" onClick={() => void removeBudget(b.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}</td>
         </tr>)}</tbody>
       </table></div>
     </section>}
@@ -172,10 +178,10 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
       <thead><tr><th>No.</th><th>{t("Transaksi")}</th><th>{t("Tanggal & Program")}</th><th>{t("Penerima")}</th><th>{t("Jumlah")}</th><th>{t("Verifikasi")}</th><th>{t("Aksi")}</th></tr></thead>
       <tbody>{loading ? <tr><td colSpan={7} className="table-empty">{t("Memuat transaksi...")}</td></tr> : filtered.length === 0 ? <tr><td colSpan={7} className="table-empty">{t("Belum ada pengeluaran yang sesuai.")}</td></tr> : paged.map((e, i) => <tr key={e.id}>
         <td>{(page - 1) * perPage + i + 1}</td><td><strong>{e.description}</strong><small>{e.receiptNumber} • {t(e.category)}</small></td><td><strong>{e.expenseDate}</strong><small>{e.programName}</small></td><td><strong>{e.payee}</strong><small>{t(e.paymentMethod)}</small></td><td className="amount-cell">{money(e.amountCents)}</td>
-        <td><select aria-label={`${t("Verifikasi")} ${e.receiptNumber}`} className={`status-select ${e.status === "Diverifikasi" ? "status-selesai" : "status-draf"}`} value={e.status} onChange={(ev) => void verify(e.id, ev.target.value)}>{["Belum Diverifikasi", "Diverifikasi"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></td>
+        <td>{canManageFinance ? <select aria-label={`${t("Verifikasi")} ${e.receiptNumber}`} className={`status-select ${e.status === "Diverifikasi" ? "status-selesai" : "status-draf"}`} value={e.status} onChange={(ev) => void verify(e.id, ev.target.value)}>{["Belum Diverifikasi", "Diverifikasi"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select> : <span className={`status-select ${e.status === "Diverifikasi" ? "status-selesai" : "status-draf"}`}>{t(e.status)}</span>}</td>
         <td className="actions-cell">
-          <button className="action-btn edit" onClick={() => openExpenseForm(e)} title={t("Edit")}><Icon name="edit" size={15} /></button>
-          <button className="action-btn delete" onClick={() => void removeExpense(e.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>
+          {canManageFinance && <button className="action-btn edit" onClick={() => openExpenseForm(e)} title={t("Edit")}><Icon name="edit" size={15} /></button>}
+          {canDelete && <button className="action-btn delete" onClick={() => void removeExpense(e.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}
         </td>
       </tr>)}</tbody>
     </table></div><div className="table-footer">{t("Menampilkan")} {paged.length} {t("dari")} {filtered.length} {t("transaksi")}</div>
@@ -192,7 +198,7 @@ export default function Finance({ openDialog = null }: { openDialog?: "budget" |
         <label className="wide">{t("Catatan")}<textarea rows={3} value={budgetForm.notes} onChange={(e) => setBudgetForm({ ...budgetForm, notes: e.target.value })} /></label>
       </div><div className="form-actions"><button type="button" onClick={() => setDialog(null)}>{t("Batal")}</button><button className="save-button" disabled={saving}>{t("Simpan Anggaran")}</button></div></form> :
       <form onSubmit={submitExpense}><div className="form-grid">
-        <label>{t("Nomor Bukti")} *<input required value={expenseForm.receiptNumber} onChange={(e) => setExpenseForm({ ...expenseForm, receiptNumber: e.target.value })} placeholder={t("Contoh: BKT-2026-001")} /></label>
+        <label>{t("Nomor Bukti")} *<input required value={expenseForm.receiptNumber} onChange={(e) => setExpenseForm({ ...expenseForm, receiptNumber: e.target.value })} placeholder={t("Contoh: NR-2026-001")} /><small className="field-help">{t("Kode resmi")}: NR — {t("Nomor Bukti")}</small></label>
         <label>{t("Tanggal")} *<input required type="date" value={expenseForm.expenseDate} onChange={(e) => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })} /></label>
         <label className="wide">{t("Uraian Pengeluaran")} *<input required value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder={t("Barang atau jasa yang dibayar")} /></label>
         <label>{t("Kategori")}<select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>{["Operasional", "Perjalanan", "Perlengkapan", "Pemeliharaan", "Kegiatan"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>

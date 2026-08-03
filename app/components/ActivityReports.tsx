@@ -7,6 +7,8 @@ import { useToast, ToastContainer } from "./Toast";
 import AutoNumberButton from "./AutoNumberButton";
 import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
+import { roleHasCapability } from "../roles";
+import RoleAccessNotice from "./RoleAccessNotice";
 
 type Report = {
   id: number; reportNumber: string; title: string; activityDate: string; location: string;
@@ -38,6 +40,7 @@ export default function ActivityReports({ initialOpenCreate = false }: { initial
   const [stats, setStats] = useState({ total: 0, participants: 0, completed: 0, thisMonth: 0 });
   const [currentRole, setCurrentRole] = useState("");
   const perPage = 15;
+  const canWrite = roleHasCapability(currentRole, "writeOperational");
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -132,7 +135,8 @@ export default function ActivityReports({ initialOpenCreate = false }: { initial
   }
 
   return <div className="page mail-page report-page">
-    <div className="page-heading"><div><p className="eyebrow">{t("PELAPORAN PROGRAM")}</p><h1>{t("Laporan Kegiatan")}</h1><p>{t("Catat pelaksanaan kegiatan dan siapkan laporan bulanan kantor.")}</p></div><button className="primary-button mail-add" onClick={openCreate}><Icon name="plus" /> {t("Buat Laporan")}</button></div>
+    <div className="page-heading"><div><p className="eyebrow">{t("PELAPORAN PROGRAM")}</p><h1>{t("Laporan Kegiatan")}</h1><p>{t("Catat pelaksanaan kegiatan dan siapkan laporan bulanan kantor.")}</p></div>{canWrite && <button className="primary-button mail-add" onClick={openCreate}><Icon name="plus" /> {t("Buat Laporan")}</button>}</div>
+    <RoleAccessNotice role={currentRole} />
 
     <section className="mail-stats report-stats">
       <article><span>{t("Total Laporan")}</span><strong>{stats.total}</strong><small>{t("Semua laporan kegiatan")}</small></article>
@@ -154,9 +158,9 @@ export default function ActivityReports({ initialOpenCreate = false }: { initial
         <thead><tr><th>No.</th><th>{t("Kegiatan")}</th><th>{t("Tanggal & Lokasi")}</th><th>{t("Penanggung Jawab")}</th><th>{t("Peserta")}</th><th>{t("Status")}</th><th>{t("Aksi")}</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={7} className="table-empty">{t("Memuat laporan...")}</td></tr> : reports.length === 0 ? <tr><td colSpan={7} className="table-empty">{t("Belum ada laporan kegiatan yang sesuai.")}</td></tr> : reports.map((r, i) => <tr key={r.id}>
           <td>{(page - 1) * perPage + i + 1}</td><td><strong>{r.title}</strong><small>{r.reportNumber} • {t(r.activityType)}</small></td><td><strong>{r.activityDate}</strong><small>{r.location}</small></td><td>{r.responsiblePerson}</td><td>{r.participantCount}</td>
-          <td><select aria-label={`${t("Status")} ${r.reportNumber}`} className={`status-select status-${r.status.toLowerCase()}`} value={r.status} onChange={(e) => void updateStatus(r.id, e.target.value)}>{statusOptions.map((s) => <option key={s} value={s}>{t(s)}</option>)}</select></td>
+          <td>{canWrite ? <select aria-label={`${t("Status")} ${r.reportNumber}`} className={`status-select status-${r.status.toLowerCase()}`} value={r.status} onChange={(e) => void updateStatus(r.id, e.target.value)}>{statusOptions.map((s) => <option key={s} value={s}>{t(s)}</option>)}</select> : <span className={`status-select status-${r.status.toLowerCase()}`}>{t(r.status)}</span>}</td>
           <td className="actions-cell">
-            <button className="action-btn edit" onClick={() => openEdit(r)} title={t("Edit")}><Icon name="edit" size={15} /></button>
+            {canWrite && <button className="action-btn edit" onClick={() => openEdit(r)} title={t("Edit")}><Icon name="edit" size={15} /></button>}
             {currentRole === "Administrator" && <button className="action-btn delete" onClick={() => void remove(r.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}
           </td>
         </tr>)}</tbody>
@@ -168,7 +172,7 @@ export default function ActivityReports({ initialOpenCreate = false }: { initial
       <section className="mail-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-form-title">
         <div className="modal-heading"><div><p className="eyebrow">{t("FORMULIR KEGIATAN")}</p><h2 id="report-form-title">{t(editing ? "Edit Laporan Kegiatan" : "Buat Laporan Kegiatan")}</h2></div><button aria-label={t("Tutup formulir")} onClick={() => setShowForm(false)}>×</button></div>
         <form onSubmit={submit}><div className="form-grid">
-          <label>{t("Nomor Laporan")} *<input required value={form.reportNumber} onChange={(e) => setForm({ ...form, reportNumber: e.target.value })} placeholder={t("Contoh: LPK-2026-08-0001")} /><AutoNumberButton documentType="report" date={form.activityDate} onNumber={(reportNumber) => setForm({ ...form, reportNumber })} /></label>
+          <label>{t("Nomor Laporan")} *<input required value={form.reportNumber} onChange={(e) => setForm({ ...form, reportNumber: e.target.value })} placeholder={t("Contoh: RA-2026-08-0001")} /><AutoNumberButton documentType="report" date={form.activityDate} onNumber={(reportNumber) => setForm({ ...form, reportNumber })} /></label>
           <label>{t("Tanggal Kegiatan")} *<input required type="date" value={form.activityDate} onChange={(e) => setForm({ ...form, activityDate: e.target.value })} /></label>
           <label className="wide">{t("Nama Kegiatan")} *<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={t("Nama kegiatan")} /></label>
           <label>{t("Jenis Kegiatan")}<select value={form.activityType} onChange={(e) => setForm({ ...form, activityType: e.target.value })}>{["Rapat", "Sosialisasi", "Monitoring", "Pelatihan", "Kegiatan Masyarakat"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>

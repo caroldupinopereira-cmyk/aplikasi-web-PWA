@@ -2,7 +2,8 @@ export type IconName =
   | "dashboard" | "inbox" | "send" | "users" | "report" | "wallet"
   | "archive" | "settings" | "search" | "plus" | "refresh" | "download"
   | "printer" | "edit" | "trash" | "check" | "shield" | "activity"
-  | "device" | "info" | "close" | "bell" | "menu" | "chevron-down";
+  | "device" | "info" | "close" | "bell" | "menu" | "chevron-down"
+  | "save" | "message";
 
 const paths: Record<IconName, ReactNode> = {
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
@@ -29,6 +30,8 @@ const paths: Record<IconName, ReactNode> = {
   bell: <><path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3z"/><path d="M10 21h4"/></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
   "chevron-down": <path d="m6 9 6 6 6-6"/>,
+  save: <><path d="M5 3h12l3 3v15H4V4a1 1 0 0 1 1-1z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></>,
+  message: <><path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8M8 13h5"/></>,
 };
 
 export default function Icon({ name, size = 18, className }: { name: IconName; size?: number; className?: string }) {

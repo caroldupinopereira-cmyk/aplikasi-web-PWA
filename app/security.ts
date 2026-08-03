@@ -1,6 +1,7 @@
-import { desc } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs } from "../db/schema";
+import { auditRetentionCutoff } from "./audit-retention";
 import { getPasswordSession, requestHasValidOrigin } from "./auth/session";
 import {
   ROLES,
@@ -15,6 +16,7 @@ export const MANAGE_ROLES = rolesWith("approve");
 export const ADMIN_ROLES = rolesWith("deletePermanent");
 
 export type RequestUser = {
+  id: number;
   email: string;
   displayName: string;
   role: StaffRole;
@@ -25,6 +27,7 @@ export async function getRequestUser(request: Request): Promise<RequestUser | nu
   const auth = await getPasswordSession(request);
   if (!auth) return null;
   return {
+    id: auth.user.id,
     email: auth.user.email,
     displayName: auth.user.displayName,
     role: auth.user.role as StaffRole,
@@ -47,6 +50,7 @@ export async function requireRole(request: Request, allowed: StaffRole[]) {
     };
   }
   const user: RequestUser = {
+    id: auth.user.id,
     email: auth.user.email,
     displayName: auth.user.displayName,
     role: auth.user.role as StaffRole,
@@ -64,6 +68,14 @@ export type AuditChange = {
   after?: Record<string, unknown>;
 };
 
+export async function pruneExpiredAuditLogs() {
+  const db = await getDb();
+  const cutoff = auditRetentionCutoff();
+  await db
+    .delete(auditLogs)
+    .where(sql`datetime(${auditLogs.createdAt}) < datetime(${cutoff})`);
+}
+
 export async function addAudit(
   user: RequestUser,
   action: string,
@@ -72,6 +84,7 @@ export async function addAudit(
   change: AuditChange = {},
 ) {
   const db = await getDb();
+  await pruneExpiredAuditLogs();
   await db.insert(auditLogs).values({
     actorEmail: user.email,
     actorName: user.displayName,
@@ -110,5 +123,6 @@ export function auditDifference(
 
 export async function recentAudit(limit = 30) {
   const db = await getDb();
+  await pruneExpiredAuditLogs();
   return db.select().from(auditLogs).orderBy(desc(auditLogs.id)).limit(limit);
 }

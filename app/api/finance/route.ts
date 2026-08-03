@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       db.select().from(budgetAllocations).orderBy(desc(budgetAllocations.id)),
       db.select().from(expenses).orderBy(desc(expenses.expenseDate), desc(expenses.id)),
     ]);
-    return Response.json({ budgets, expenses: transactions });
+    return Response.json({ budgets, expenses: transactions, currentUser: auth.user });
   } catch (error) { return errorResponse(error); }
 }
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import {
   activityReports,
@@ -7,10 +7,21 @@ import {
   documents,
   expenses,
   incomingLetters,
+  incomingLetterTasks,
+  notificationStates,
   outgoingLetters,
   residents,
 } from "../../../db/schema";
-import { READ_ROLES, requireRole } from "../../security";
+import {
+  pruneExpiredAuditLogs,
+  READ_ROLES,
+  requireRole,
+} from "../../security";
+import { dashboardActivityCutoff } from "../../audit-retention";
+import {
+  hasUnreadNotifications,
+  notificationModulesForRole,
+} from "../../notification-status";
 import {
   buildMonthlyValues,
   calculateBudget,
@@ -30,6 +41,7 @@ export async function GET(request: Request) {
     const db = await getDb();
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().toISOString().slice(0, 7);
+    const activityCutoff = dashboardActivityCutoff();
     const requestedYear = new URL(request.url).searchParams.get("year");
     const selectedYear = parseDashboardYear(requestedYear, currentYear);
     if (selectedYear === null) {
@@ -38,6 +50,7 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
+    await pruneExpiredAuditLogs();
 
     const [
       [incomingSummary],
@@ -60,6 +73,10 @@ export async function GET(request: Request) {
       [reportsThisMonth],
       [unverifiedExpenseSummary],
       residentsByGender,
+      [notificationState],
+      notificationActivityRows,
+      [assignedIncomingTaskSummary],
+      [activeIncomingTaskSummary],
     ] = await Promise.all([
       db.select({ value: sql<number>`count(*)` }).from(incomingLetters),
       db
@@ -92,7 +109,9 @@ export async function GET(request: Request) {
       db
         .select()
         .from(auditLogs)
-        .where(like(auditLogs.createdAt, `${selectedYear}-%`))
+        .where(
+          sql`datetime(${auditLogs.createdAt}) >= datetime(${activityCutoff})`,
+        )
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(30),
       db
@@ -163,6 +182,40 @@ export async function GET(request: Request) {
         })
         .from(residents)
         .groupBy(residents.gender),
+      db
+        .select()
+        .from(notificationStates)
+        .where(eq(notificationStates.staffUserId, auth.user.id))
+        .limit(1),
+      db
+        .select({
+          module: auditLogs.module,
+          latestAt: sql<string>`max(datetime(${auditLogs.createdAt}))`,
+        })
+        .from(auditLogs)
+        .where(
+          sql`${auditLogs.module} in ('Surat Masuk', 'Surat Keluar', 'Keuangan')`,
+        )
+        .groupBy(auditLogs.module),
+      db
+        .select({ value: sql<number>`count(*)` })
+        .from(incomingLetterTasks)
+        .where(
+          and(
+            eq(incomingLetterTasks.assignedToStaffId, auth.user.id),
+            inArray(incomingLetterTasks.status, ["Diproses", "Perlu Perbaikan"]),
+          ),
+        ),
+      db
+        .select({ value: sql<number>`count(*)` })
+        .from(incomingLetterTasks)
+        .where(
+          inArray(incomingLetterTasks.status, [
+            "Diproses",
+            "Perlu Perbaikan",
+            "Diajukan Selesai",
+          ]),
+        ),
     ]);
 
     const totalBudget = Number(budgetSummary?.value ?? 0);
@@ -171,6 +224,27 @@ export async function GET(request: Request) {
       totalBudget,
       totalExpense,
     );
+    const incomingTaskCount = Number(incomingUnfollowed?.value ?? 0);
+    const outgoingTaskCount = Number(outgoingPending?.value ?? 0);
+    const expenseTaskCount = Number(unverifiedExpenseSummary?.count ?? 0);
+    const assignedIncomingTaskCount = Number(assignedIncomingTaskSummary?.value ?? 0);
+    const activeIncomingTaskCount = Number(activeIncomingTaskSummary?.value ?? 0);
+    const notificationModules = notificationModulesForRole(auth.user.role);
+    const incomingNotificationCount =
+      auth.user.role === "Staf"
+        ? assignedIncomingTaskCount
+        : incomingTaskCount + activeIncomingTaskCount;
+    const notificationTaskCount =
+      (notificationModules.includes("Surat Masuk") ? incomingNotificationCount : 0) +
+      (notificationModules.includes("Surat Keluar") ? outgoingTaskCount : 0) +
+      (notificationModules.includes("Keuangan") ? expenseTaskCount : 0);
+    const latestRelevantActivityAt =
+      notificationActivityRows
+        .filter((row) => notificationModules.includes(row.module))
+        .map((row) => row.latestAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null;
 
     const activityType: Record<string, string> = {
       "Surat Masuk": "incoming",
@@ -183,7 +257,10 @@ export async function GET(request: Request) {
       Keamanan: "settings",
     };
 
-    const recentActivities = recentLogs.map((log) => ({
+    const visibleLogs = auth.user.role === "Administrator"
+      ? recentLogs
+      : recentLogs.filter((log) => !["Pengaturan", "Keamanan"].includes(log.module));
+    const recentActivities = visibleLogs.map((log) => ({
       title: log.action,
       meta: log.details || `Aktivitas oleh ${log.actorName}`,
       badge: log.module,
@@ -209,9 +286,11 @@ export async function GET(request: Request) {
       },
       stats: {
         incomingTotal: Number(incomingSummary?.value ?? 0),
-        incomingUnfollowed: Number(incomingUnfollowed?.value ?? 0),
+        incomingUnfollowed: incomingTaskCount,
+        assignedIncomingTaskCount,
+        activeIncomingTaskCount,
         outgoingTotal: Number(outgoingSummary?.value ?? 0),
-        outgoingPending: Number(outgoingPending?.value ?? 0),
+        outgoingPending: outgoingTaskCount,
         residentTotal: Number(residentSummary?.value ?? 0),
         householdHeads: Number(householdHeadSummary?.value ?? 0),
         documentTotal: Number(documentSummary?.value ?? 0),
@@ -224,8 +303,17 @@ export async function GET(request: Request) {
         reportsDraft: Number(reportSummary?.draft ?? 0),
         reportsComplete: Number(reportSummary?.complete ?? 0),
         reportsThisMonth: Number(reportsThisMonth?.value ?? 0),
-        unverifiedExpenseCount: Number(unverifiedExpenseSummary?.count ?? 0),
+        unverifiedExpenseCount: expenseTaskCount,
         unverifiedExpenseAmount: Number(unverifiedExpenseSummary?.amount ?? 0),
+      },
+      notification: {
+        taskCount: notificationTaskCount,
+        hasUnread: hasUnreadNotifications(
+          notificationTaskCount,
+          notificationState?.lastSeenAt,
+          latestRelevantActivityAt,
+        ),
+        lastSeenAt: notificationState?.lastSeenAt ?? null,
       },
       insights: {
         residentsByGender: residentsByGender.map((row) => ({

@@ -6,6 +6,8 @@ import { exportToCSV } from "../utils/export";
 import { useToast, ToastContainer } from "./Toast";
 import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
+import { roleHasCapability } from "../roles";
+import RoleAccessNotice from "./RoleAccessNotice";
 
 type Resident = {
   id: number;
@@ -53,6 +55,7 @@ export default function ResidentData({ initialOpenCreate = false }: { initialOpe
   const [summary, setSummary] = useState({ total: 0, male: 0, female: 0, households: 0, incomplete: 0 });
   const [currentRole, setCurrentRole] = useState("");
   const perPage = 15;
+  const canWrite = roleHasCapability(currentRole, "writeOperational");
 
   const loadRecords = useCallback(async () => {
     setLoading(true);
@@ -163,8 +166,9 @@ export default function ResidentData({ initialOpenCreate = false }: { initialOpe
     <div className="page mail-page resident-page">
       <div className="page-heading">
         <div><p className="eyebrow">{t("DATA WILAYAH")}</p><h1>{t("Data Penduduk")}</h1><p>{t("Kelola data penduduk berdasarkan suco, aldeia, dan keluarga.")}</p></div>
-        <button className="primary-button mail-add" onClick={openCreate}><Icon name="plus" /> {t("Tambah Penduduk")}</button>
+        {canWrite && <button className="primary-button mail-add" onClick={openCreate}><Icon name="plus" /> {t("Tambah Penduduk")}</button>}
       </div>
+      <RoleAccessNotice role={currentRole} />
 
       <section className="mail-stats resident-stats">
         <article><span>{t("Total Penduduk")}</span><strong>{summary.total}</strong><small>{t("Data yang telah tercatat")}</small></article>
@@ -197,7 +201,7 @@ export default function ResidentData({ initialOpenCreate = false }: { initialOpe
                   <td><strong>{r.householdNumber}</strong><small>{t(r.isHouseholdHead ? "Kepala keluarga" : "Anggota keluarga")}</small></td>
                   <td>{r.occupation || "—"}</td>
                   <td className="actions-cell">
-                    <button className="action-btn edit" onClick={() => openEdit(r)} title={t("Edit")}><Icon name="edit" size={15} /></button>
+                    {canWrite && <button className="action-btn edit" onClick={() => openEdit(r)} title={t("Edit")}><Icon name="edit" size={15} /></button>}
                     {currentRole === "Administrator" && <button className="action-btn delete" onClick={() => void remove(r.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}
                   </td>
                 </tr>)}
@@ -212,8 +216,8 @@ export default function ResidentData({ initialOpenCreate = false }: { initialOpe
         <section className="mail-modal" role="dialog" aria-modal="true" aria-labelledby="resident-form-title">
           <div className="modal-heading"><div><p className="eyebrow">{t("FORMULIR PENDUDUK")}</p><h2 id="resident-form-title">{t(editing ? "Edit Data Penduduk" : "Tambah Data Penduduk")}</h2></div><button aria-label={t("Tutup formulir")} onClick={() => setShowForm(false)}>×</button></div>
           <form onSubmit={submit}><div className="form-grid">
-            <label>{t("Nomor Data")} *<input required value={form.recordNumber} onChange={(e) => setForm({ ...form, recordNumber: e.target.value })} placeholder={t("Contoh: PDT-2026-001")} /></label>
-            <label>{t("Nomor Keluarga")} *<input required value={form.householdNumber} onChange={(e) => setForm({ ...form, householdNumber: e.target.value })} placeholder={t("Contoh: KK-2026-001")} /></label>
+            <label>{t("Nomor Data")} *<input required value={form.recordNumber} onChange={(e) => setForm({ ...form, recordNumber: e.target.value })} placeholder={t("Contoh: DP-2026-001")} /><small className="field-help">{t("Kode resmi")}: DP — {t("Data Penduduk")}</small></label>
+            <label>{t("Nomor Keluarga")} *<input required value={form.householdNumber} onChange={(e) => setForm({ ...form, householdNumber: e.target.value })} placeholder={t("Contoh: NF-2026-001")} /><small className="field-help">{t("Kode resmi")}: NF — {t("Nomor Keluarga")}</small></label>
             <label className="wide">{t("Nama Lengkap")} *<input required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder={t("Nama lengkap penduduk contoh")} /></label>
             <label>{t("Jenis Kelamin")}<select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>{["Laki-laki", "Perempuan"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>
             <label>{t("Tanggal Lahir")} *<input required type="date" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} /></label>

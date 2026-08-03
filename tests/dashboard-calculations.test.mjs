@@ -6,6 +6,10 @@ import {
   classifyBudget,
   parseDashboardYear,
 } from "../app/api/dashboard/calculations.ts";
+import {
+  auditRetentionCutoff,
+  dashboardActivityCutoff,
+} from "../app/audit-retention.ts";
 
 test("uses the current year when the filter is empty", () => {
   assert.equal(parseDashboardYear(null, 2026), 2026);
@@ -59,4 +63,18 @@ test("classifies budget warning levels", () => {
   assert.equal(classifyBudget(100_000, 50_000, 50), "safe");
   assert.equal(classifyBudget(100_000, 80_000, 80), "warning");
   assert.equal(classifyBudget(100_000, 110_000, 110), "danger");
+});
+
+test("keeps audit history for twelve calendar months", () => {
+  assert.equal(
+    auditRetentionCutoff(new Date("2026-08-03T12:00:00.000Z")),
+    "2025-08-03T12:00:00.000Z",
+  );
+});
+
+test("shows only the latest thirty days on the Dashboard", () => {
+  assert.equal(
+    dashboardActivityCutoff(new Date("2026-08-03T12:00:00.000Z")),
+    "2026-07-04T12:00:00.000Z",
+  );
 });

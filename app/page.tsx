@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import IncomingMail from "./components/IncomingMail";
-import OutgoingMail from "./components/OutgoingMail";
+import OutgoingMail, { type OutgoingResponseDraft } from "./components/OutgoingMail";
 import ResidentData from "./components/ResidentData";
 import ActivityReports from "./components/ActivityReports";
 import Finance from "./components/Finance";
@@ -17,6 +17,7 @@ import { useLanguage } from "./components/LanguageProvider";
 import Icon, { type IconName } from "./components/Icon";
 import { formatLongDate } from "./i18n";
 import { canUseDashboardQuickAction, dashboardRoleMessage } from "./dashboard-access";
+import { roleHasCapability } from "./roles";
 
 const menu = [
   ["Dashboard", "dashboard"],
@@ -51,6 +52,8 @@ type DashboardData = {
   stats: {
     incomingTotal: number;
     incomingUnfollowed: number;
+    assignedIncomingTaskCount: number;
+    activeIncomingTaskCount: number;
     outgoingTotal: number;
     outgoingPending: number;
     residentTotal: number;
@@ -77,6 +80,11 @@ type DashboardData = {
     expensesByMonth: number[];
   };
   recentActivities: DashboardActivity[];
+  notification: {
+    taskCount: number;
+    hasUnread: boolean;
+    lastSeenAt: string | null;
+  };
 };
 
 type GlobalSearchResult = {
@@ -105,6 +113,8 @@ export default function Home() {
   const [globalResults, setGlobalResults] = useState<GlobalSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [outgoingResponseDraft, setOutgoingResponseDraft] =
+    useState<OutgoingResponseDraft | null>(null);
 
   const loadDashboard = useCallback(() => {
     let activeRequest = true;
@@ -207,10 +217,27 @@ export default function Home() {
     .join("") || "PA";
   const budgetPercent = stats?.budgetUsagePercent ?? 0;
   const progressPercent = Math.min(100, Math.max(0, budgetPercent));
+  const canWriteOperational = roleHasCapability(currentUser?.role, "writeOperational");
+  const canApprove = roleHasCapability(currentUser?.role, "approve");
+  const canManageFinance = roleHasCapability(currentUser?.role, "manageFinance");
+  const relevantIncomingCount =
+    currentUser?.role === "Staf"
+      ? (stats?.assignedIncomingTaskCount ?? 0)
+      : canApprove
+        ? (stats?.incomingUnfollowed ?? 0) + (stats?.activeIncomingTaskCount ?? 0)
+        : 0;
+  const relevantIncomingDescription =
+    currentUser?.role === "Staf"
+      ? "Tugas Karta Tama untuk Anda"
+      : "Karta Tama perlu disposisi atau pemeriksaan";
+  const relevantOutgoingCount = canApprove ? (stats?.outgoingPending ?? 0) : 0;
+  const relevantExpenseCount = canManageFinance ? (stats?.unverifiedExpenseCount ?? 0) : 0;
   const notificationCount =
-    (stats?.incomingUnfollowed ?? 0) +
-    (stats?.outgoingPending ?? 0) +
-    (stats?.unverifiedExpenseCount ?? 0);
+    relevantIncomingCount +
+    relevantOutgoingCount +
+    relevantExpenseCount;
+  const hasUnreadNotifications =
+    notificationCount > 0 && Boolean(selectedData?.notification.hasUnread);
   const openModule = (module: string) => {
     setActive(module);
     setQuickMenuOpen(false);
@@ -226,9 +253,31 @@ export default function Home() {
     setNotificationOpen(false);
     setQuery("");
   };
+  const createOutgoingResponse = useCallback((draft: OutgoingResponseDraft) => {
+    setOutgoingResponseDraft(draft);
+    setActive("Surat Keluar");
+    setNotificationOpen(false);
+    setQuickCreate(null);
+  }, []);
+  const consumeOutgoingResponseDraft = useCallback(() => {
+    setOutgoingResponseDraft(null);
+  }, []);
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.assign("/login");
+  };
+  const markNotificationsRead = async () => {
+    const response = await fetch("/api/notifications/read", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) return;
+    setData((current) => current ? {
+      ...current,
+      notification: {
+        ...current.notification,
+        hasUnread: false,
+        lastSeenAt: result.lastSeenAt,
+      },
+    } : current);
   };
 
   return (
@@ -259,7 +308,7 @@ export default function Home() {
         </nav>
 
         <div className="sidebar-footer">
-          <button className={active === "Pengaturan" ? "nav-item active" : "nav-item"} onClick={() => { setActive("Pengaturan"); setMobileOpen(false); }}><span className="nav-icon"><Icon name="settings" /></span>{t("Pengaturan")}</button>
+          {currentUser?.role === "Administrator" && <button className={active === "Pengaturan" ? "nav-item active" : "nav-item"} onClick={() => { setActive("Pengaturan"); setMobileOpen(false); }}><span className="nav-icon"><Icon name="settings" /></span>{t("Pengaturan")}</button>}
           <button className="user-card" onClick={() => { setActive("Profil"); setMobileOpen(false); }}>
             <div className="avatar">{initials}</div>
             <div><strong>{currentUser?.displayName ?? "Pengguna"}</strong><span>{t(currentUser?.role ?? "Memuat...")}</span></div>
@@ -295,16 +344,17 @@ export default function Home() {
           </div>
           <div className="top-actions">
             <LanguageSwitcher />
-            <div className="notification-wrap">
+            {(canWriteOperational || canApprove || canManageFinance) && <div className="notification-wrap">
               <button
-                className="notification"
+                className={`notification ${hasUnreadNotifications ? "unread" : notificationCount > 0 ? "pending" : "idle"}`}
                 aria-label={`${notificationCount} ${t("notifikasi administrasi")}`}
                 aria-expanded={notificationOpen}
                 aria-haspopup="dialog"
                 onClick={() => setNotificationOpen((open) => !open)}
               >
                 <Icon name="bell" size={20} />
-                {notificationCount > 0 && <i />}
+                {hasUnreadNotifications && <i />}
+                {notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
               </button>
               {notificationOpen && (
                 <div className="notification-menu" role="dialog" aria-label="Notifikasi administrasi">
@@ -314,31 +364,34 @@ export default function Home() {
                   </div>
                   {notificationCount > 0 ? (
                     <>
-                      {(stats?.incomingUnfollowed ?? 0) > 0 && <button onClick={() => openModule("Surat Masuk")}>
+                      {relevantIncomingCount > 0 && <button onClick={() => openModule("Surat Masuk")}>
                         <span>{t("Surat masuk")}</span>
-                        <strong>{stats?.incomingUnfollowed ?? 0}</strong>
-                        <small>{t("Belum ditindaklanjuti")}</small>
+                        <strong>{relevantIncomingCount}</strong>
+                        <small>{t(relevantIncomingDescription)}</small>
                       </button>}
-                      {(stats?.outgoingPending ?? 0) > 0 && <button onClick={() => openModule("Surat Keluar")}>
+                      {relevantOutgoingCount > 0 && <button onClick={() => openModule("Surat Keluar")}>
                         <span>{t("Surat keluar")}</span>
-                        <strong>{stats?.outgoingPending ?? 0}</strong>
+                        <strong>{relevantOutgoingCount}</strong>
                         <small>{t("Menunggu persetujuan")}</small>
                       </button>}
-                      {(stats?.unverifiedExpenseCount ?? 0) > 0 && <button onClick={() => openModule("Anggaran")}>
+                      {relevantExpenseCount > 0 && <button onClick={() => openModule("Anggaran")}>
                         <span>{t("Pengeluaran")}</span>
-                        <strong>{stats?.unverifiedExpenseCount ?? 0}</strong>
+                        <strong>{relevantExpenseCount}</strong>
                         <small>{t("Belum diverifikasi")} · {selectedYear}</small>
                       </button>}
                     </>
                   ) : <p>{t("Tidak ada data yang memerlukan perhatian saat ini.")}</p>}
+                  {hasUnreadNotifications && <button className="notification-read-button" onClick={() => void markNotificationsRead()}>
+                    <Icon name="check" size={14} /> {t("Tandai sudah dilihat")}
+                  </button>}
                 </div>
               )}
-            </div>
+            </div>}
             <div className="top-avatar" title={currentUser?.email}>{initials}</div>
           </div>
         </header>
 
-        {active === "Surat Masuk" ? <IncomingMail initialOpenCreate={quickCreate?.module === active} /> : active === "Surat Keluar" ? <OutgoingMail initialOpenCreate={quickCreate?.module === active} /> : active === "Data Penduduk" ? <ResidentData initialOpenCreate={quickCreate?.module === active} /> : active === "Laporan Kegiatan" ? <ActivityReports initialOpenCreate={quickCreate?.module === active} /> : active === "Anggaran" ? <Finance openDialog={quickCreate?.module === active && (quickCreate.mode === "budget" || quickCreate.mode === "expense") ? quickCreate.mode : null} /> : active === "Arsip Dokumen" ? <DocumentArchive initialOpenCreate={quickCreate?.module === active} /> : active === "Pengaturan" ? <Settings /> : active === "Profil" ? <UserProfile /> : <div className="page">
+        {active === "Surat Masuk" ? <IncomingMail initialOpenCreate={quickCreate?.module === active} onCreateOutgoingResponse={createOutgoingResponse} onOpenArchive={() => setActive("Arsip Dokumen")} /> : active === "Surat Keluar" ? <OutgoingMail initialOpenCreate={quickCreate?.module === active} initialDraft={outgoingResponseDraft} onDraftConsumed={consumeOutgoingResponseDraft} /> : active === "Data Penduduk" ? <ResidentData initialOpenCreate={quickCreate?.module === active} /> : active === "Laporan Kegiatan" ? <ActivityReports initialOpenCreate={quickCreate?.module === active} /> : active === "Anggaran" ? <Finance openDialog={quickCreate?.module === active && (quickCreate.mode === "budget" || quickCreate.mode === "expense") ? quickCreate.mode : null} /> : active === "Arsip Dokumen" ? <DocumentArchive initialOpenCreate={quickCreate?.module === active} /> : active === "Pengaturan" ? <Settings /> : active === "Profil" ? <UserProfile /> : <div className="page">
           <div className="page-heading">
             <div>
               <p className="eyebrow">{formatLongDate(new Date(), locale).toUpperCase()}</p>
@@ -450,7 +503,6 @@ export default function Home() {
             <DashboardActivityFeed
               activities={selectedData?.recentActivities ?? []}
               query={query}
-              year={selectedYear}
               loading={loading}
               error={Boolean(dashboardError)}
               onOpenModule={openModule}
@@ -458,16 +510,19 @@ export default function Home() {
 
             <article className="panel task-panel">
               <div className="panel-title">
-                <div><h2>{t("Status Data")}</h2><p>{t("Ringkasan data yang perlu diperhatikan")}</p></div>
-                <span className="task-count">{(stats?.incomingUnfollowed ?? 0) + (stats?.outgoingPending ?? 0)}</span>
+                <div><h2>{t("Tugas Sesuai Peran")}</h2><p>{t("Pekerjaan yang dapat Anda tindaklanjuti")}</p></div>
+                <span className="task-count">{notificationCount}</span>
               </div>
               <div className="task-list">
-                {loading ? <p className="empty">{t("Memuat status data...")}</p> : dashboardError ? <p className="empty">{t("Status data tidak dapat ditampilkan.")}</p> : (stats?.incomingUnfollowed ?? 0) + (stats?.outgoingPending ?? 0) === 0 ? (
-                  <p className="empty">{t("Tidak ada surat yang menunggu tindak lanjut atau persetujuan.")}</p>
+                {loading ? <p className="empty">{t("Memuat status data...")}</p> : dashboardError ? <p className="empty">{t("Status data tidak dapat ditampilkan.")}</p> : currentUser?.role === "Viewer" ? (
+                  <p className="empty">{t("Peran Anda tidak memiliki tugas perubahan data.")}</p>
+                ) : notificationCount === 0 ? (
+                  <p className="empty">{t("Tidak ada tugas yang menunggu saat ini.")}</p>
                 ) : (
                   <>
-                    <div className="task"><span>{stats?.incomingUnfollowed ?? 0} {t("surat masuk belum ditindaklanjuti")}</span></div>
-                    <div className="task"><span>{stats?.outgoingPending ?? 0} {t("surat keluar menunggu persetujuan")}</span></div>
+                    {relevantIncomingCount > 0 && <div className="task"><span>{relevantIncomingCount} {t(relevantIncomingDescription)}</span></div>}
+                    {relevantOutgoingCount > 0 && <div className="task"><span>{relevantOutgoingCount} {t("surat keluar menunggu persetujuan")}</span></div>}
+                    {relevantExpenseCount > 0 && <div className="task"><span>{relevantExpenseCount} {t("pengeluaran belum diverifikasi")}</span></div>}
                   </>
                 )}
               </div>

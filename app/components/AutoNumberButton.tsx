@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import {
+  DOCUMENT_NUMBER_TYPES,
+  type DocumentNumberType,
+} from "../document-number";
 import { useLanguage } from "./LanguageProvider";
 
 type Props = {
-  documentType: "incoming" | "outgoing" | "report";
+  documentType: DocumentNumberType;
   date: string;
   onNumber: (number: string) => void;
 };
@@ -16,6 +20,7 @@ export default function AutoNumberButton({
 }: Props) {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
+  const documentCode = DOCUMENT_NUMBER_TYPES[documentType];
 
   async function generate() {
     setLoading(true);
@@ -40,13 +45,18 @@ export default function AutoNumberButton({
   }
 
   return (
-    <button
-      className="auto-number-button"
-      disabled={loading || !date}
-      onClick={generate}
-      type="button"
-    >
-      {t(loading ? "Membuat..." : "Buat Nomor Otomatis")}
-    </button>
+    <span className="auto-number-tools">
+      <button
+        className="auto-number-button"
+        disabled={loading || !date}
+        onClick={generate}
+        type="button"
+      >
+        {t(loading ? "Membuat..." : "Buat Nomor Otomatis")}
+      </button>
+      <small className="official-code-hint">
+        {t("Kode resmi")}: <strong>{documentCode.prefix}</strong> — {t(documentCode.label)}
+      </small>
+    </span>
   );
 }

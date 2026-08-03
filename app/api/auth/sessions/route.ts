@@ -72,6 +72,7 @@ export async function POST(request: Request) {
         );
       await addAudit(
         {
+          id: auth.user.id,
           email: auth.user.email,
           displayName: auth.user.displayName,
           role: auth.user.role as "Administrator" | "Pimpinan" | "Staf" | "Viewer",

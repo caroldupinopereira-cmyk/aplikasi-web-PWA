@@ -1,7 +1,7 @@
 export const DOCUMENT_NUMBER_TYPES = {
-  incoming: { prefix: "SM", label: "Surat Masuk" },
-  outgoing: { prefix: "SK", label: "Surat Keluar" },
-  report: { prefix: "LPK", label: "Laporan Kegiatan" },
+  incoming: { prefix: "KT", label: "Surat Masuk" },
+  outgoing: { prefix: "KS", label: "Surat Keluar" },
+  report: { prefix: "RA", label: "Laporan Kegiatan" },
 } as const;
 
 export type DocumentNumberType = keyof typeof DOCUMENT_NUMBER_TYPES;

@@ -16,7 +16,6 @@ export type DashboardActivity = {
 type DashboardActivityFeedProps = {
   activities: DashboardActivity[];
   query: string;
-  year: number;
   loading: boolean;
   error: boolean;
   onOpenModule: (module: string) => void;
@@ -58,7 +57,6 @@ function activityTime(value: string, locale: string) {
 export default function DashboardActivityFeed({
   activities,
   query,
-  year,
   loading,
   error,
   onOpenModule,
@@ -88,7 +86,7 @@ export default function DashboardActivityFeed({
   return (
     <article className="panel activity-panel">
       <div className="panel-title activity-heading">
-        <div><h2>{t("Aktivitas Terbaru")}</h2><p>{t("Riwayat perubahan tahun")} {year}</p></div>
+        <div><h2>{t("Aktivitas Terbaru")}</h2><p>{t("Aktivitas dalam 30 hari terakhir")}</p></div>
         <label className="activity-filter">
           <span>{t("Modul")}</span>
           <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}>
@@ -114,7 +112,7 @@ export default function DashboardActivityFeed({
               </div>
             </div>
           );
-        }) : <p className="empty">{error ? t("Aktivitas tidak dapat ditampilkan.") : `${t("Tidak ada aktivitas yang cocok pada tahun")} ${year}.`}</p>}
+        }) : <p className="empty">{error ? t("Aktivitas tidak dapat ditampilkan.") : t("Tidak ada aktivitas dalam 30 hari terakhir.")}</p>}
       </div>
       {filtered.length > 8 && (
         <button className="activity-more" onClick={() => setShowAll((value) => !value)}>

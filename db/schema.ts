@@ -147,6 +147,53 @@ export const authSessions = sqliteTable("auth_sessions", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const notificationStates = sqliteTable("notification_states", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  staffUserId: integer("staff_user_id")
+    .notNull()
+    .unique()
+    .references(() => staffUsers.id, { onDelete: "cascade" }),
+  lastSeenAt: text("last_seen_at").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const incomingLetterTasks = sqliteTable("incoming_letter_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incomingLetterId: integer("incoming_letter_id")
+    .notNull()
+    .unique()
+    .references(() => incomingLetters.id, { onDelete: "cascade" }),
+  assignedToStaffId: integer("assigned_to_staff_id")
+    .references(() => staffUsers.id, { onDelete: "set null" }),
+  assignedToName: text("assigned_to_name").notNull(),
+  assignedToEmail: text("assigned_to_email").notNull(),
+  instruction: text("instruction").notNull(),
+  dueDate: text("due_date").notNull(),
+  resultType: text("result_type").notNull().default("Catatan"),
+  outgoingLetterId: integer("outgoing_letter_id")
+    .references(() => outgoingLetters.id, { onDelete: "set null" }),
+  documentId: integer("document_id")
+    .references(() => documents.id, { onDelete: "set null" }),
+  completionNote: text("completion_note").notNull().default(""),
+  status: text("status").notNull().default("Diproses"),
+  assignedByName: text("assigned_by_name").notNull(),
+  assignedByEmail: text("assigned_by_email").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const incomingLetterMessages = sqliteTable("incoming_letter_messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incomingLetterId: integer("incoming_letter_id")
+    .notNull()
+    .references(() => incomingLetters.id, { onDelete: "cascade" }),
+  authorName: text("author_name").notNull(),
+  authorEmail: text("author_email").notNull(),
+  authorRole: text("author_role").notNull(),
+  message: text("message").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const auditLogs = sqliteTable("audit_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actorEmail: text("actor_email").notNull(),

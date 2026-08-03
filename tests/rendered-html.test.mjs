@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const developmentPreviewMeta =
@@ -30,4 +31,28 @@ test("renders development preview metadata", async () => {
     /^text\/html\b/i,
   );
   assert.match(await response.text(), developmentPreviewMeta);
+});
+
+test("incoming letter create does not read an undefined id before inserting", async () => {
+  const source = await readFile(
+    new URL("../app/api/incoming-letters/route.ts", import.meta.url),
+    "utf8",
+  );
+  const postHandler = source.slice(
+    source.indexOf("export async function POST"),
+    source.indexOf("export async function PATCH"),
+  );
+  assert.doesNotMatch(
+    postHandler,
+    /incomingLetters\.id,\s*id/,
+  );
+
+  const patchHandler = source.slice(
+    source.indexOf("export async function PATCH"),
+    source.indexOf("export async function DELETE"),
+  );
+  assert.match(
+    patchHandler,
+    /const \[before\][\s\S]*incomingLetters\.id,\s*id/,
+  );
 });

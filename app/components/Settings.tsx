@@ -24,7 +24,9 @@ export default function Settings() {
   const { toasts, addToast, dismiss } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [resetTarget, setResetTarget] = useState<Staff | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Staff | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -100,6 +102,35 @@ export default function Settings() {
     }
   }
 
+  async function deleteAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deleteTarget) return;
+    const form = new FormData(event.currentTarget);
+    setDeleting(true);
+    try {
+      const response = await fetch("/api/staff", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: deleteTarget.id,
+          confirmationName: String(form.get("confirmationName") ?? ""),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        addToast(t(data.error || "Akun belum dapat dihapus."), "error");
+        return;
+      }
+      setDeleteTarget(null);
+      addToast(t("Akun staf berhasil dihapus permanen."), "success");
+      await load();
+    } catch {
+      addToast(t("Koneksi gagal saat menghapus akun."), "error");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return <div className="page settings-page">
     <div className="page-heading">
       <div><p className="eyebrow">{t("KEAMANAN SISTEM")}</p><h1>{t("Pengaturan & Akses Staf")}</h1><p>{t("Atur siapa yang dapat melihat, mencatat, dan memverifikasi data kantor.")}</p></div>
@@ -120,7 +151,10 @@ export default function Settings() {
           <td>{current?.role === "Administrator" ? <select className="role-select" value={user.role} onChange={(e) => void update(user, { role: e.target.value })}>{permissions.map(([role]) => <option key={role} value={role}>{t(role)}</option>)}</select> : <span className="category-pill">{t(user.role)}</span>}</td>
           <td>{current?.role === "Administrator" ? <button className={user.active ? "account-status active" : "account-status"} onClick={() => void update(user, { active: !user.active })}>{t(user.active ? "Aktif" : "Nonaktif")}</button> : t(user.active ? "Aktif" : "Nonaktif")}</td>
           <td>{current?.role === "Administrator" && user.email !== current.email
-            ? <button className="reset-password-button" onClick={() => setResetTarget(user)}>{t("Reset kata sandi")}</button>
+            ? <div className="settings-account-actions">
+                <button className="reset-password-button" onClick={() => setResetTarget(user)}>{t("Reset kata sandi")}</button>
+                <button className="delete-account-button" onClick={() => setDeleteTarget(user)}><Icon name="trash" size={13} /> {t("Hapus Akun")}</button>
+              </div>
             : <span className="settings-self-label">{user.email === current?.email ? t("Akun saat ini") : "—"}</span>}
           </td>
         </tr>)}</tbody>
@@ -131,7 +165,7 @@ export default function Settings() {
       <article className="panel"><div className="panel-title"><div><h2>{t("Matriks Hak Akses")}</h2><p>{t("Pembagian tanggung jawab untuk setiap peran")}</p></div></div>
         <div className="permission-list">{permissions.map(([role, scope, action, admin]) => <div key={role}><strong>{t(role)}</strong><span>{t(scope)}</span><span>{t(action)}</span><small>{t(admin)}</small></div>)}</div>
       </article>
-      <article className="panel"><div className="panel-title"><div><h2>{t("Riwayat Aktivitas")}</h2><p>{t("Perubahan akun dan keamanan terbaru")}</p></div></div>
+      <article className="panel"><div className="panel-title"><div><h2>{t("Riwayat Aktivitas")}</h2><p>{t("Perubahan terbaru disimpan selama 12 bulan")}</p></div></div>
         <div className="audit-list">{logs.length ? logs.map((log) => <div key={log.id}><span className="audit-dot">✓</span><div><strong>{t(log.action)}</strong><p>{log.actorName} • {t(log.module)}</p><small>{log.details}</small>{log.changedFields !== "[]" && <small>{t("Bidang berubah")}: {JSON.parse(log.changedFields).join(", ")}</small>}</div><time>{new Date(log.createdAt).toLocaleDateString(locale === "pt" ? "pt-PT" : locale === "tet" ? "tet-TL" : "id-ID")}</time></div>) : <p className="empty">{t("Belum ada aktivitas.")}</p>}</div>
       </article>
     </section>
@@ -146,6 +180,11 @@ export default function Settings() {
         <label className="wide">{t("Kata sandi sementara")}<input name="temporaryPassword" type="password" minLength={12} autoComplete="new-password" required /><small className="field-help">{t("Minimal 12 karakter dengan huruf besar, kecil, angka, dan simbol.")}</small></label>
         <label className="wide">{t("Ulangi kata sandi sementara")}<input name="confirmation" type="password" minLength={12} autoComplete="new-password" required /></label>
       </div><div className="privacy-note"><span>!</span><p>{t("Semua session akun ini akan dihentikan. Staf wajib mengganti kata sandi setelah login.")}</p></div><div className="form-actions"><button type="button" onClick={() => setResetTarget(null)}>{t("Batal")}</button><button className="save-button" disabled={resetting}>{t(resetting ? "Mereset..." : "Reset Kata Sandi")}</button></div></form>
+    </div></div>}
+    {deleteTarget && <div className="modal-layer"><div className="mail-modal danger-modal"><div className="modal-heading"><div><p className="eyebrow">{t("HAPUS AKUN")}</p><h2>{t("Hapus Akun Staf")}</h2><p>{deleteTarget.displayName} · {deleteTarget.email}</p></div><button onClick={() => setDeleteTarget(null)} aria-label={t("Tutup")}>×</button></div>
+      <form onSubmit={deleteAccount}><div className="privacy-note danger-note"><span>!</span><p><strong>{t("Tindakan permanen")}:</strong> {t("Akun, kredensial login, dan semua session pengguna akan dihapus. Riwayat aktivitas tetap disimpan.")}</p></div><div className="form-grid">
+        <label className="wide">{t("Ketik nama lengkap untuk konfirmasi")}<input name="confirmationName" autoComplete="off" placeholder={deleteTarget.displayName} required /><small className="field-help">{t("Nama harus sama persis dengan nama akun di atas.")}</small></label>
+      </div><div className="form-actions"><button type="button" onClick={() => setDeleteTarget(null)}>{t("Batal")}</button><button className="delete-confirm-button" disabled={deleting}>{t(deleting ? "Menghapus..." : "Hapus Permanen")}</button></div></form>
     </div></div>}
     <ToastContainer toasts={toasts} dismiss={dismiss} />
   </div>;

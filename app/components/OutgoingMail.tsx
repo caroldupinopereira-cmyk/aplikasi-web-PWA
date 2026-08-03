@@ -7,6 +7,8 @@ import { useToast, ToastContainer } from "./Toast";
 import AutoNumberButton from "./AutoNumberButton";
 import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
+import { roleHasCapability } from "../roles";
+import RoleAccessNotice from "./RoleAccessNotice";
 
 type Letter = {
   id: number;
@@ -37,22 +39,49 @@ const blankForm = {
 
 const statuses = ["Draf", "Menunggu Persetujuan", "Disetujui", "Ditolak", "Terkirim"];
 
-export default function OutgoingMail({ initialOpenCreate = false }: { initialOpenCreate?: boolean }) {
+export type OutgoingResponseDraft = {
+  sourceIncomingLetterId: number;
+  recipient: string;
+  subject: string;
+  category: string;
+  notes: string;
+};
+
+export default function OutgoingMail({
+  initialOpenCreate = false,
+  initialDraft = null,
+  onDraftConsumed,
+}: {
+  initialOpenCreate?: boolean;
+  initialDraft?: OutgoingResponseDraft | null;
+  onDraftConsumed?: () => void;
+}) {
   const { t } = useLanguage();
   const [letters, setLetters] = useState<Letter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(initialOpenCreate);
+  const [showForm, setShowForm] = useState(initialOpenCreate || Boolean(initialDraft));
   const [editing, setEditing] = useState<Letter | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Semua");
-  const [form, setForm] = useState(blankForm);
+  const [form, setForm] = useState(() => initialDraft ? {
+    ...blankForm,
+    recipient: initialDraft.recipient,
+    subject: initialDraft.subject,
+    category: initialDraft.category,
+    notes: initialDraft.notes,
+  } : blankForm);
   const [saving, setSaving] = useState(false);
   const [currentRole, setCurrentRole] = useState("");
   const { toasts, addToast, dismiss } = useToast();
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState({ total: 0, draft: 0, pending: 0, sent: 0 });
+  const [sourceIncomingLetterId, setSourceIncomingLetterId] = useState<number | null>(
+    initialDraft?.sourceIncomingLetterId ?? null,
+  );
   const perPage = 15;
+  const canWrite = roleHasCapability(currentRole, "writeOperational");
+  const canApprove = roleHasCapability(currentRole, "approve");
 
   const loadLetters = useCallback(async () => {
     setLoading(true);
@@ -81,6 +110,11 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
     const timer = window.setTimeout(() => void loadLetters(), 300);
     return () => window.clearTimeout(timer);
   }, [loadLetters]);
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    onDraftConsumed?.();
+  }, [initialDraft, onDraftConsumed]);
 
   function openCreate() {
     setEditing(null);
@@ -126,12 +160,29 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Gagal menyimpan surat.");
+        if (sourceIncomingLetterId) {
+          const linkResponse = await fetch("/api/incoming-letters/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "link-result",
+              letterId: sourceIncomingLetterId,
+              kind: "outgoing",
+              resultId: data.letter.id,
+            }),
+          });
+          const linkData = await linkResponse.json();
+          if (!linkResponse.ok) {
+            throw new Error(linkData.error || "Karta Sai belum dapat dihubungkan ke tugas.");
+          }
+        }
         setPage(1);
         await loadLetters();
         addToast(t("Surat keluar berhasil disimpan sebagai draf."), "success");
       }
       setForm(blankForm);
       setEditing(null);
+      setSourceIncomingLetterId(null);
       setShowForm(false);
     } catch (error) {
       addToast(t(error instanceof Error ? error.message : "Gagal menyimpan surat."), "error");
@@ -177,12 +228,12 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
   }
 
   function statusActions(letter: Letter) {
-    if (["Draf", "Ditolak"].includes(letter.status)) {
+    if (canWrite && ["Draf", "Ditolak"].includes(letter.status)) {
       return [{ label: "Ajukan", status: "Menunggu Persetujuan" }];
     }
     if (
       letter.status === "Menunggu Persetujuan" &&
-      ["Administrator", "Pimpinan"].includes(currentRole)
+      canApprove
     ) {
       return [
         { label: "Setujui", status: "Disetujui" },
@@ -203,10 +254,11 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
           <h1>{t("Surat Keluar")}</h1>
           <p>{t("Buat, periksa, setujui, dan pantau pengiriman surat resmi kantor.")}</p>
         </div>
-        <button className="primary-button mail-add" onClick={openCreate}>
+        {canWrite && <button className="primary-button mail-add" onClick={openCreate}>
           <Icon name="plus" /> {t("Buat Surat Keluar")}
-        </button>
+        </button>}
       </div>
+      <RoleAccessNotice role={currentRole} />
 
       <section className="mail-stats outgoing-stats">
         <article><span>{t("Total Surat")}</span><strong>{summary.total}</strong><small>{t("Semua surat tercatat")}</small></article>
@@ -248,7 +300,7 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
                   </td>
                   <td className="actions-cell">
                     {statusActions(letter).map((action) => <button key={action.status} className="approval-action" onClick={() => void updateStatus(letter.id, action.status)}>{t(action.label)}</button>)}
-                    {["Draf", "Ditolak"].includes(letter.status) && <button className="action-btn edit" onClick={() => openEdit(letter)} title={t("Edit")}><Icon name="edit" size={15} /></button>}
+                    {canWrite && ["Draf", "Ditolak"].includes(letter.status) && <button className="action-btn edit" onClick={() => openEdit(letter)} title={t("Edit")}><Icon name="edit" size={15} /></button>}
                     {currentRole === "Administrator" && <button className="action-btn delete" onClick={() => void remove(letter.id)} title={t("Hapus")}><Icon name="trash" size={15} /></button>}
                   </td>
                 </tr>
@@ -269,7 +321,7 @@ export default function OutgoingMail({ initialOpenCreate = false }: { initialOpe
             </div>
             <form onSubmit={submit}>
               <div className="form-grid">
-                <label>{t("Nomor Surat")} *<input required value={form.letterNumber} onChange={(e) => setForm({ ...form, letterNumber: e.target.value })} placeholder={t("Contoh: SK-2026-08-0001")} /><AutoNumberButton documentType="outgoing" date={form.letterDate} onNumber={(letterNumber) => setForm({ ...form, letterNumber })} /></label>
+                <label>{t("Nomor Surat")} *<input required value={form.letterNumber} onChange={(e) => setForm({ ...form, letterNumber: e.target.value })} placeholder={t("Contoh: KS-2026-08-0001")} /><AutoNumberButton documentType="outgoing" date={form.letterDate} onNumber={(letterNumber) => setForm({ ...form, letterNumber })} /></label>
                 <label>{t("Tanggal Surat")} *<input required type="date" value={form.letterDate} onChange={(e) => setForm({ ...form, letterDate: e.target.value })} /></label>
                 <label>{t("Kategori")}<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{["Umum", "Undangan", "Keuangan", "Pembangunan", "Kepegawaian"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>
                 <label>{t("Cara Pengiriman")}<select value={form.deliveryMethod} onChange={(e) => setForm({ ...form, deliveryMethod: e.target.value })}>{["Diantar", "Email", "Pos", "Diambil"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>

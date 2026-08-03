@@ -2,7 +2,8 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { authCredentials, authSessions, staffUsers } from "../../../db/schema";
 import { createPasswordHash } from "../../auth/password";
-import { addAudit, getRequestUser, recentAudit, requireRole, ROLES } from "../../security";
+import { addAudit, recentAudit, requireRole, ROLES } from "../../security";
+import { staffAccountDeletionError } from "../../staff-account";
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : "Terjadi kesalahan.";
@@ -10,15 +11,13 @@ function message(error: unknown) {
 
 export async function GET(request: Request) {
   try {
-    const currentUser = await getRequestUser(request);
-    if (!currentUser) return Response.json({ error: "Akun belum terdaftar." }, { status: 401 });
+    const auth = await requireRole(request, ["Administrator"]);
+    if ("response" in auth) return auth.response;
+    const currentUser = auth.user;
     const db = await getDb();
-    const users = currentUser.role === "Administrator"
-      ? await db.select().from(staffUsers).orderBy(desc(staffUsers.active), staffUsers.displayName)
-      : [await db.select().from(staffUsers).where(eq(staffUsers.email, currentUser.email)).limit(1).then((rows) => rows[0])];
-    const logs =
-      currentUser.role === "Administrator" ? await recentAudit(30) : [];
-    return Response.json({ currentUser, users: users.filter(Boolean), logs });
+    const users = await db.select().from(staffUsers).orderBy(desc(staffUsers.active), staffUsers.displayName);
+    const logs = await recentAudit(30);
+    return Response.json({ currentUser, users, logs });
   } catch (error) {
     return Response.json({ error: message(error) }, { status: 500 });
   }
@@ -130,6 +129,59 @@ export async function PATCH(request: Request) {
     }
     await addAudit(auth.user, "Ubah akses staf", "Pengaturan", `${user.displayName} — ${user.role} — ${user.active ? "Aktif" : "Nonaktif"}`);
     return Response.json({ user });
+  } catch (error) {
+    return Response.json({ error: message(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await requireRole(request, ["Administrator"]);
+    if ("response" in auth) return auth.response;
+    const payload = await request.json() as {
+      id?: number;
+      confirmationName?: string;
+    };
+    if (!Number.isInteger(payload.id) || Number(payload.id) <= 0) {
+      return Response.json({ error: "Akun yang akan dihapus tidak valid." }, { status: 400 });
+    }
+
+    const db = await getDb();
+    const [target] = await db
+      .select()
+      .from(staffUsers)
+      .where(eq(staffUsers.id, Number(payload.id)))
+      .limit(1);
+    if (!target) {
+      return Response.json({ error: "Akun tidak ditemukan." }, { status: 404 });
+    }
+
+    const deletionError = staffAccountDeletionError(
+      auth.user.email,
+      target,
+      payload.confirmationName ?? "",
+    );
+    if (deletionError) {
+      return Response.json({ error: deletionError }, { status: 400 });
+    }
+
+    await db.delete(staffUsers).where(eq(staffUsers.id, target.id));
+    await addAudit(
+      auth.user,
+      "Hapus akun staf",
+      "Pengaturan",
+      `${target.displayName} — ${target.role} — ${target.email}`,
+      {
+        entityId: target.id,
+        before: {
+          displayName: target.displayName,
+          email: target.email,
+          role: target.role,
+          active: target.active,
+        },
+      },
+    );
+    return Response.json({ success: true });
   } catch (error) {
     return Response.json({ error: message(error) }, { status: 500 });
   }

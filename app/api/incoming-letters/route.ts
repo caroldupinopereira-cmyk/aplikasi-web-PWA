@@ -59,8 +59,6 @@ export async function POST(request: Request) {
     if (validationError) return Response.json({ error: validationError }, { status: 400 });
 
     const db = await getDb();
-    const [before] = await db.select().from(incomingLetters).where(eq(incomingLetters.id, id)).limit(1);
-    if (!before) return Response.json({ error: "Surat tidak ditemukan." }, { status: 404 });
     const [letter] = await db
       .insert(incomingLetters)
       .values({
@@ -96,13 +94,6 @@ export async function PATCH(request: Request) {
     if (dateError) return Response.json({ error: dateError }, { status: 400 });
 
     const updates: Record<string, unknown> = {};
-    if (payload.status) {
-      const allowed = ["Baru", "Diproses", "Selesai"];
-      if (!allowed.includes(payload.status as string)) {
-        return Response.json({ error: "Data status tidak valid." }, { status: 400 });
-      }
-      updates.status = payload.status;
-    }
     for (const key of ["letterNumber", "receivedDate", "letterDate", "sender", "subject", "category", "notes"]) {
       if (payload[key] !== undefined) updates[key] = String(payload[key]).trim();
     }
@@ -111,6 +102,14 @@ export async function PATCH(request: Request) {
     }
 
     const db = await getDb();
+    const [before] = await db
+      .select()
+      .from(incomingLetters)
+      .where(eq(incomingLetters.id, id))
+      .limit(1);
+    if (!before) {
+      return Response.json({ error: "Surat tidak ditemukan." }, { status: 404 });
+    }
     const [letter] = await db
       .update(incomingLetters)
       .set(updates)
@@ -118,7 +117,7 @@ export async function PATCH(request: Request) {
       .returning();
     await addAudit(auth.user, "Perbarui surat masuk", "Surat Masuk", `ID ${id}`, {
       entityId: id,
-      ...auditDifference(before, letter, Object.keys(updates), ["letterNumber", "receivedDate", "letterDate", "sender", "subject", "category", "status"]),
+      ...auditDifference(before, letter, Object.keys(updates), ["letterNumber", "receivedDate", "letterDate", "sender", "subject", "category"]),
     });
     return Response.json({ letter });
   } catch (error) {
