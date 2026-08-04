@@ -2,8 +2,9 @@ import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { outgoingLetters } from "../../../db/schema";
 import { addAudit, ADMIN_ROLES, auditDifference, MANAGE_ROLES, READ_ROLES, requireRole, WRITE_ROLES } from "../../security";
-import { parsePositiveId, serverError, validDateFields } from "../validation";
+import { cleanText, parsePositiveId, serverError, validDateFields } from "../validation";
 import { readListQuery } from "../list-query";
+import { OUTGOING_TEMPLATE_KEYS } from "../../outgoing-templates";
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Terjadi kesalahan.";
@@ -67,6 +68,8 @@ export async function POST(request: Request) {
     }
     const dateError = validDateFields(payload, ["letterDate"]);
     if (dateError) return Response.json({ error: dateError }, { status: 400 });
+    const templateKey = OUTGOING_TEMPLATE_KEYS.includes(payload.templateKey as typeof OUTGOING_TEMPLATE_KEYS[number]) ? payload.templateKey : "custom";
+    const content = cleanText(payload.content, 12000);
 
     const db = await getDb();
     const [letter] = await db
@@ -79,6 +82,8 @@ export async function POST(request: Request) {
         category: payload.category?.trim() || "Umum",
         signatory: payload.signatory.trim(),
         deliveryMethod: payload.deliveryMethod?.trim() || "Diantar",
+        templateKey,
+        content,
         status: "Draf",
         notes: payload.notes?.trim() || "",
       })
@@ -156,8 +161,15 @@ export async function PATCH(request: Request) {
         { status: 403 },
       );
     }
-    for (const key of ["letterNumber", "letterDate", "recipient", "subject", "category", "signatory", "deliveryMethod", "notes"]) {
+    for (const key of ["letterNumber", "letterDate", "recipient", "subject", "category", "signatory", "deliveryMethod", "notes", "content"]) {
       if (payload[key] !== undefined) updates[key] = String(payload[key]).trim();
+    }
+    if (payload.templateKey !== undefined) {
+      const templateKey = String(payload.templateKey);
+      if (!OUTGOING_TEMPLATE_KEYS.includes(templateKey as typeof OUTGOING_TEMPLATE_KEYS[number])) {
+        return Response.json({ error: "Template Karta Sai tidak valid." }, { status: 400 });
+      }
+      updates.templateKey = templateKey;
     }
     if (Object.keys(updates).length === 0) {
       return Response.json({ error: "Tidak ada data yang diperbarui." }, { status: 400 });
@@ -174,7 +186,7 @@ export async function PATCH(request: Request) {
       : "Perbarui surat keluar";
     await addAudit(auth.user, action, "Surat Keluar", `${letter.letterNumber} — ${letter.recipient}`, {
       entityId: id,
-      ...auditDifference(current, letter, Object.keys(updates), ["letterNumber", "letterDate", "recipient", "subject", "category", "signatory", "deliveryMethod", "status", "approvalNote", "approvedBy", "approvedAt"]),
+      ...auditDifference(current, letter, Object.keys(updates), ["letterNumber", "letterDate", "recipient", "subject", "category", "signatory", "deliveryMethod", "templateKey", "content", "status", "approvalNote", "approvedBy", "approvedAt"]),
     });
     return Response.json({ letter });
   } catch (error) {

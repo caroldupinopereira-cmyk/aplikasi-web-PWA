@@ -9,6 +9,12 @@ import { useLanguage } from "./LanguageProvider";
 import Icon from "./Icon";
 import { roleHasCapability } from "../roles";
 import RoleAccessNotice from "./RoleAccessNotice";
+import {
+  OUTGOING_TEMPLATE_KEYS,
+  outgoingTemplateContent,
+  outgoingTemplateLabels,
+  type OutgoingTemplateKey,
+} from "../outgoing-templates";
 
 type Letter = {
   id: number;
@@ -19,6 +25,8 @@ type Letter = {
   category: string;
   signatory: string;
   deliveryMethod: string;
+  templateKey: OutgoingTemplateKey;
+  content: string;
   status: string;
   notes: string;
   approvalNote: string;
@@ -34,6 +42,8 @@ const blankForm = {
   category: "Umum",
   signatory: "",
   deliveryMethod: "Diantar",
+  templateKey: "custom" as OutgoingTemplateKey,
+  content: "",
   notes: "",
 };
 
@@ -56,7 +66,7 @@ export default function OutgoingMail({
   initialDraft?: OutgoingResponseDraft | null;
   onDraftConsumed?: () => void;
 }) {
-  const { t } = useLanguage();
+  const { locale, t } = useLanguage();
   const [letters, setLetters] = useState<Letter[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(initialOpenCreate || Boolean(initialDraft));
@@ -133,6 +143,8 @@ export default function OutgoingMail({
       category: letter.category,
       signatory: letter.signatory,
       deliveryMethod: letter.deliveryMethod,
+      templateKey: letter.templateKey,
+      content: letter.content,
       notes: letter.notes,
     });
     setShowForm(true);
@@ -325,9 +337,16 @@ export default function OutgoingMail({
                 <label>{t("Tanggal Surat")} *<input required type="date" value={form.letterDate} onChange={(e) => setForm({ ...form, letterDate: e.target.value })} /></label>
                 <label>{t("Kategori")}<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{["Umum", "Undangan", "Keuangan", "Pembangunan", "Kepegawaian"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>
                 <label>{t("Cara Pengiriman")}<select value={form.deliveryMethod} onChange={(e) => setForm({ ...form, deliveryMethod: e.target.value })}>{["Diantar", "Email", "Pos", "Diambil"].map((item) => <option key={item} value={item}>{t(item)}</option>)}</select></label>
+                <label className="wide">{t("Template Surat")}<select value={form.templateKey} onChange={(e) => {
+                  const templateKey = e.target.value as OutgoingTemplateKey;
+                  const nextContent = outgoingTemplateContent(templateKey, locale);
+                  setForm({ ...form, templateKey, content: nextContent || form.content });
+                }}>{OUTGOING_TEMPLATE_KEYS.map((key) => <option key={key} value={key}>{t(outgoingTemplateLabels[key])}</option>)}</select><small className="field-help">{t("Memilih template akan mengisi editor. Isi tetap dapat diubah.")}</small></label>
                 <label className="wide">{t("Tujuan/Penerima")} *<input required value={form.recipient} onChange={(e) => setForm({ ...form, recipient: e.target.value })} placeholder={t("Nama instansi atau penerima")} /></label>
                 <label className="wide">{t("Perihal")} *<input required value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder={t("Ringkasan tujuan surat")} /></label>
                 <label className="wide">{t("Penandatangan")} *<input required value={form.signatory} onChange={(e) => setForm({ ...form, signatory: e.target.value })} placeholder={t("Nama dan jabatan penandatangan")} /></label>
+                <label className="wide">{t("Isi Surat")}<textarea className="letter-content-editor" rows={12} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder={t("Pilih template atau tulis isi surat di sini")} /><small className="field-help">{t("Ganti teks di dalam tanda kurung siku dengan informasi yang benar.")}</small></label>
+                {form.content && <div className="wide letter-preview"><strong>{t("Pratinjau Isi Surat")}</strong><p>{form.content}</p></div>}
                 <label className="wide">{t("Catatan")}<textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t("Catatan internal (opsional)")} /></label>
               </div>
               <div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>{t("Batal")}</button><button className="save-button" disabled={saving}>{t(saving ? "Menyimpan..." : editing ? "Perbarui Surat" : "Simpan sebagai Draf")}</button></div>

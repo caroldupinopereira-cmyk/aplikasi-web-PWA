@@ -12,6 +12,12 @@ import DashboardInsights from "./components/DashboardInsights";
 import DashboardActivityFeed, { type DashboardActivity } from "./components/DashboardActivityFeed";
 import Settings from "./components/Settings";
 import UserProfile from "./components/UserProfile";
+import TaskCenter from "./components/TaskCenter";
+import AdministrativeServices from "./components/AdministrativeServices";
+import OfficeCalendar from "./components/OfficeCalendar";
+import PublicComplaints from "./components/PublicComplaints";
+import VisitorBook from "./components/VisitorBook";
+import OfficeAssets from "./components/OfficeAssets";
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import { useLanguage } from "./components/LanguageProvider";
 import Icon, { type IconName } from "./components/Icon";
@@ -21,6 +27,12 @@ import { roleHasCapability } from "./roles";
 
 const menu = [
   ["Dashboard", "dashboard"],
+  ["Tugas Kantor", "activity"],
+  ["Pelayanan Administrasi", "report"],
+  ["Kalender & Agenda", "activity"],
+  ["Pengaduan & Aspirasi", "message"],
+  ["Buku Tamu", "users"],
+  ["Inventaris & Aset", "archive"],
   ["Surat Masuk", "inbox"],
   ["Surat Keluar", "send"],
   ["Data Penduduk", "users"],
@@ -83,6 +95,15 @@ type DashboardData = {
   notification: {
     taskCount: number;
     hasUnread: boolean;
+    unreadDeletionCount: number;
+    deletionNotifications: Array<{
+      id: number;
+      action: string;
+      module: string;
+      details: string;
+      actorName: string;
+      createdAt: string;
+    }>;
     lastSeenAt: string | null;
   };
 };
@@ -236,8 +257,11 @@ export default function Home() {
     relevantIncomingCount +
     relevantOutgoingCount +
     relevantExpenseCount;
+  const unreadDeletionCount = selectedData?.notification.unreadDeletionCount ?? 0;
+  const deletionNotifications = selectedData?.notification.deletionNotifications ?? [];
+  const bellCount = notificationCount + unreadDeletionCount;
   const hasUnreadNotifications =
-    notificationCount > 0 && Boolean(selectedData?.notification.hasUnread);
+    Boolean(selectedData?.notification.hasUnread);
   const openModule = (module: string) => {
     setActive(module);
     setQuickMenuOpen(false);
@@ -275,6 +299,7 @@ export default function Home() {
       notification: {
         ...current.notification,
         hasUnread: false,
+        unreadDeletionCount: 0,
         lastSeenAt: result.lastSeenAt,
       },
     } : current);
@@ -293,7 +318,7 @@ export default function Home() {
 
         <nav aria-label="Menu utama">
           <p className="nav-label">{t("MENU UTAMA")}</p>
-          {menu.map(([label, icon]) => (
+          {menu.filter(([label]) => !["Pengaduan & Aspirasi", "Buku Tamu"].includes(label) || currentUser?.role !== "Viewer").map(([label, icon]) => (
             <button
               className={active === label ? "nav-item active" : "nav-item"}
               key={label}
@@ -347,19 +372,19 @@ export default function Home() {
             {(canWriteOperational || canApprove || canManageFinance) && <div className="notification-wrap">
               <button
                 className={`notification ${hasUnreadNotifications ? "unread" : notificationCount > 0 ? "pending" : "idle"}`}
-                aria-label={`${notificationCount} ${t("notifikasi administrasi")}`}
+                aria-label={`${bellCount} ${t("notifikasi administrasi")}`}
                 aria-expanded={notificationOpen}
                 aria-haspopup="dialog"
                 onClick={() => setNotificationOpen((open) => !open)}
               >
                 <Icon name="bell" size={20} />
                 {hasUnreadNotifications && <i />}
-                {notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}
+                {bellCount > 0 && <b>{bellCount > 99 ? "99+" : bellCount}</b>}
               </button>
               {notificationOpen && (
                 <div className="notification-menu" role="dialog" aria-label="Notifikasi administrasi">
                   <div className="notification-heading">
-                    <div><strong>{t("Perlu Perhatian")}</strong><span>{notificationCount} {t("item perlu diperiksa")}</span></div>
+                    <div><strong>{t("Perlu Perhatian")}</strong><span>{bellCount} {t("item perlu diperiksa")}</span></div>
                     <button onClick={() => setNotificationOpen(false)} aria-label={t("Tutup notifikasi")}>×</button>
                   </div>
                   {notificationCount > 0 ? (
@@ -380,7 +405,15 @@ export default function Home() {
                         <small>{t("Belum diverifikasi")} · {selectedYear}</small>
                       </button>}
                     </>
-                  ) : <p>{t("Tidak ada data yang memerlukan perhatian saat ini.")}</p>}
+                  ) : deletionNotifications.length === 0 ? <p>{t("Tidak ada data yang memerlukan perhatian saat ini.")}</p> : null}
+                  {deletionNotifications.length > 0 && <section className="notification-deletions">
+                    <h3><Icon name="trash" size={15} /> {t("Penghapusan terbaru")}</h3>
+                    {deletionNotifications.map((item) => <article key={item.id}>
+                      <div><strong>{t(item.action)}</strong><span>{t(item.module)}</span></div>
+                      <p>{item.details}</p>
+                      <small>{t("Dihapus oleh")} {item.actorName} · {new Date(`${item.createdAt.replace(" ", "T")}Z`).toLocaleString(locale === "pt" ? "pt-PT" : locale === "tet" ? "tet-TL" : "id-ID")}</small>
+                    </article>)}
+                  </section>}
                   {hasUnreadNotifications && <button className="notification-read-button" onClick={() => void markNotificationsRead()}>
                     <Icon name="check" size={14} /> {t("Tandai sudah dilihat")}
                   </button>}
@@ -391,7 +424,7 @@ export default function Home() {
           </div>
         </header>
 
-        {active === "Surat Masuk" ? <IncomingMail initialOpenCreate={quickCreate?.module === active} onCreateOutgoingResponse={createOutgoingResponse} onOpenArchive={() => setActive("Arsip Dokumen")} /> : active === "Surat Keluar" ? <OutgoingMail initialOpenCreate={quickCreate?.module === active} initialDraft={outgoingResponseDraft} onDraftConsumed={consumeOutgoingResponseDraft} /> : active === "Data Penduduk" ? <ResidentData initialOpenCreate={quickCreate?.module === active} /> : active === "Laporan Kegiatan" ? <ActivityReports initialOpenCreate={quickCreate?.module === active} /> : active === "Anggaran" ? <Finance openDialog={quickCreate?.module === active && (quickCreate.mode === "budget" || quickCreate.mode === "expense") ? quickCreate.mode : null} /> : active === "Arsip Dokumen" ? <DocumentArchive initialOpenCreate={quickCreate?.module === active} /> : active === "Pengaturan" ? <Settings /> : active === "Profil" ? <UserProfile /> : <div className="page">
+        {active === "Tugas Kantor" ? <TaskCenter onOpenIncoming={() => setActive("Surat Masuk")} /> : active === "Pelayanan Administrasi" ? <AdministrativeServices initialOpenCreate={quickCreate?.module === active} /> : active === "Kalender & Agenda" ? <OfficeCalendar /> : active === "Pengaduan & Aspirasi" ? <PublicComplaints /> : active === "Buku Tamu" ? <VisitorBook /> : active === "Inventaris & Aset" ? <OfficeAssets /> : active === "Surat Masuk" ? <IncomingMail initialOpenCreate={quickCreate?.module === active} onCreateOutgoingResponse={createOutgoingResponse} onOpenArchive={() => setActive("Arsip Dokumen")} /> : active === "Surat Keluar" ? <OutgoingMail initialOpenCreate={quickCreate?.module === active} initialDraft={outgoingResponseDraft} onDraftConsumed={consumeOutgoingResponseDraft} /> : active === "Data Penduduk" ? <ResidentData initialOpenCreate={quickCreate?.module === active} /> : active === "Laporan Kegiatan" ? <ActivityReports initialOpenCreate={quickCreate?.module === active} /> : active === "Anggaran" ? <Finance openDialog={quickCreate?.module === active && (quickCreate.mode === "budget" || quickCreate.mode === "expense") ? quickCreate.mode : null} /> : active === "Arsip Dokumen" ? <DocumentArchive initialOpenCreate={quickCreate?.module === active} /> : active === "Pengaturan" ? <Settings /> : active === "Profil" ? <UserProfile /> : <div className="page">
           <div className="page-heading">
             <div>
               <p className="eyebrow">{formatLongDate(new Date(), locale).toUpperCase()}</p>

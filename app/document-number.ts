@@ -2,6 +2,10 @@ export const DOCUMENT_NUMBER_TYPES = {
   incoming: { prefix: "KT", label: "Surat Masuk" },
   outgoing: { prefix: "KS", label: "Surat Keluar" },
   report: { prefix: "RA", label: "Laporan Kegiatan" },
+  service: { prefix: "SA", label: "Pelayanan Administrasi" },
+  complaint: { prefix: "KA", label: "Pengaduan & Aspirasi" },
+  visitor: { prefix: "LV", label: "Buku Tamu" },
+  asset: { prefix: "AS", label: "Inventaris & Aset" },
 } as const;
 
 export type DocumentNumberType = keyof typeof DOCUMENT_NUMBER_TYPES;

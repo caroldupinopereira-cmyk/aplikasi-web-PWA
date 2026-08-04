@@ -260,6 +260,24 @@ export async function GET(request: Request) {
     const visibleLogs = auth.user.role === "Administrator"
       ? recentLogs
       : recentLogs.filter((log) => !["Pengaturan", "Keamanan"].includes(log.module));
+    const deletionNotifications = visibleLogs
+      .filter((log) => log.action.startsWith("Hapus "))
+      .slice(0, 5)
+      .map((log) => ({
+        id: log.id,
+        action: log.action,
+        module: log.module,
+        details: log.details,
+        actorName: log.actorName,
+        createdAt: log.createdAt,
+      }));
+    const lastSeenTime = notificationState?.lastSeenAt
+      ? new Date(`${notificationState.lastSeenAt.replace(" ", "T")}Z`).getTime()
+      : Number.NEGATIVE_INFINITY;
+    const unreadDeletionCount = deletionNotifications.filter((item) => {
+      const createdTime = new Date(`${item.createdAt.replace(" ", "T")}Z`).getTime();
+      return Number.isFinite(createdTime) && createdTime > lastSeenTime;
+    }).length;
     const recentActivities = visibleLogs.map((log) => ({
       title: log.action,
       meta: log.details || `Aktivitas oleh ${log.actorName}`,
@@ -308,11 +326,15 @@ export async function GET(request: Request) {
       },
       notification: {
         taskCount: notificationTaskCount,
-        hasUnread: hasUnreadNotifications(
-          notificationTaskCount,
-          notificationState?.lastSeenAt,
-          latestRelevantActivityAt,
-        ),
+        hasUnread:
+          unreadDeletionCount > 0 ||
+          hasUnreadNotifications(
+            notificationTaskCount,
+            notificationState?.lastSeenAt,
+            latestRelevantActivityAt,
+          ),
+        unreadDeletionCount,
+        deletionNotifications,
         lastSeenAt: notificationState?.lastSeenAt ?? null,
       },
       insights: {

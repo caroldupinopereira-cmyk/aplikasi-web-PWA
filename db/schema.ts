@@ -23,6 +23,8 @@ export const outgoingLetters = sqliteTable("outgoing_letters", {
   category: text("category").notNull().default("Umum"),
   signatory: text("signatory").notNull(),
   deliveryMethod: text("delivery_method").notNull().default("Diantar"),
+    templateKey: text("template_key").notNull().default("custom"),
+    content: text("content").notNull().default(""),
     status: text("status").notNull().default("Draf"),
     notes: text("notes").notNull().default(""),
     approvalNote: text("approval_note").notNull().default(""),
@@ -60,6 +62,93 @@ export const activityReports = sqliteTable("activity_reports", {
   recommendations: text("recommendations").notNull().default(""),
   status: text("status").notNull().default("Draf"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const administrativeServices = sqliteTable("administrative_services", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  serviceNumber: text("service_number").notNull().unique(),
+  applicantName: text("applicant_name").notNull(),
+  suco: text("suco").notNull(),
+  serviceType: text("service_type").notNull(),
+  receivedDate: text("received_date").notNull(),
+  dueDate: text("due_date").notNull(),
+  assignedTo: text("assigned_to").notNull(),
+  requirements: text("requirements").notNull().default(""),
+  status: text("status").notNull().default("Baru"),
+  notes: text("notes").notNull().default(""),
+  completedAt: text("completed_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const officeEvents = sqliteTable("office_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  eventType: text("event_type").notNull().default("Rapat"),
+  eventDate: text("event_date").notNull(),
+  startTime: text("start_time").notNull().default("08:00"),
+  endTime: text("end_time").notNull().default(""),
+  location: text("location").notNull(),
+  responsiblePerson: text("responsible_person").notNull(),
+  priority: text("priority").notNull().default("Normal"),
+  status: text("status").notNull().default("Dijadwalkan"),
+  description: text("description").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const publicComplaints = sqliteTable("public_complaints", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  complaintNumber: text("complaint_number").notNull().unique(),
+  reporterName: text("reporter_name").notNull().default(""),
+  suco: text("suco").notNull(),
+  category: text("category").notNull(),
+  location: text("location").notNull(),
+  summary: text("summary").notNull(),
+  priority: text("priority").notNull().default("Normal"),
+  status: text("status").notNull().default("Baru"),
+  assignedToStaffId: integer("assigned_to_staff_id"),
+  assignedToName: text("assigned_to_name").notNull(),
+  createdByStaffId: integer("created_by_staff_id"),
+  followUp: text("follow_up").notNull().default(""),
+  receivedDate: text("received_date").notNull(),
+  dueDate: text("due_date").notNull(),
+  resolvedAt: text("resolved_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const visitorLogs = sqliteTable("visitor_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  visitNumber: text("visit_number").notNull().unique(),
+  visitorName: text("visitor_name").notNull(),
+  origin: text("origin").notNull(),
+  purpose: text("purpose").notNull(),
+  staffToMeet: text("staff_to_meet").notNull(),
+  visitDate: text("visit_date").notNull(),
+  checkInTime: text("check_in_time").notNull(),
+  checkOutTime: text("check_out_time").notNull().default(""),
+  status: text("status").notNull().default("Di Kantor"),
+  resultNotes: text("result_notes").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const officeAssets = sqliteTable("office_assets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  assetCode: text("asset_code").notNull().unique(),
+  assetName: text("asset_name").notNull(),
+  category: text("category").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  location: text("location").notNull(),
+  responsiblePerson: text("responsible_person").notNull(),
+  condition: text("condition").notNull().default("Baik"),
+  status: text("status").notNull().default("Aktif"),
+  acquisitionDate: text("acquisition_date").notNull(),
+  nextInspectionDate: text("next_inspection_date").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const budgetAllocations = sqliteTable("budget_allocations", {
